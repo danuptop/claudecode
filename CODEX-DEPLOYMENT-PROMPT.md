@@ -18,6 +18,15 @@
   - `patches/founder-intel-pipeline-dedup-fix.py` — patch spec for founder-intel-pipeline
   - `patches/funding-intel-brief-hardening.py` — patch spec for funding-intel-brief
   - `patches/hiring_intel_module-idempotency.py` — patch spec for hiring_intel_module
+  - `scripts/qa_validator.py` — **NEW** post-write QA validator (deploy to Tony)
+  - `scripts/content_sanitizer.py` — **NEW** content sanitizer + investor list cleaner (deploy to Tony)
+  - `scripts/resilient_api.py` — **NEW** retry/circuit-breaker wrapper for external APIs (deploy to Tony)
+  - `scripts/canonical_template.py` — **NEW** canonical page template + structure validator (deploy to Tony)
+- **Schema changes already applied to Notion:**
+  - Added `COMPANY` (rich_text) property — backfilled on ~30 pages
+  - Added `ROUND AMOUNT` (number, dollar format) property — backfilled on ~30 pages
+  - Signal Pack pages backfilled with `signal-pack:v1:{date}` REPORT KEYs
+  - OKX canonical page upgraded to v3 REPORT KEY
 
 ---
 
@@ -343,3 +352,128 @@ The correct behavior is **replace between markers** (idempotent). The bug was **
 | F-10 | MEDIUM | founder-intel-pipeline.py | Not patched — garbage POC from scraper |
 
 F-07, F-08, F-10 are deferred — they require deeper refactoring of the Grok prompt templates and website scraper logic.
+
+---
+
+## NEW SCRIPTS TO DEPLOY (copy from repo to Tony)
+
+In addition to patching the 3 existing scripts, deploy these 4 new modules:
+
+### 1. `qa_validator.py` — Post-write QA gate
+
+**Deploy to:** `/home/ubuntu/clawd/scripts/qa_validator.py`
+
+Automated QA validator that runs after every pipeline write. Sets QA STATUS based on:
+- FAIL: Error text in body, missing REPORT KEY, empty content
+- WARN: Missing outreach/hiring markers, <3 investors, no POC found, mcp_unavailable noise
+- PASS: All checks pass
+
+**Integration:** Add this to the end of `funding-intel-brief.py` and `founder-intel-pipeline.py`:
+```python
+from qa_validator import post_write_hook
+status = post_write_hook(page_id)
+if status == "FAIL":
+    logger.error(f"Page {page_id} failed QA — check QA ISSUES property")
+```
+
+**CLI usage:**
+```bash
+python3 qa_validator.py --page-id <id>           # Validate one page
+python3 qa_validator.py --recent 24               # Validate last 24h of pages
+python3 qa_validator.py --recent 24 --dry-run     # Report without updating
+```
+
+### 2. `content_sanitizer.py` — Error text stripper + investor cleaner
+
+**Deploy to:** `/home/ubuntu/clawd/scripts/content_sanitizer.py`
+
+Pre-write filter that strips error artifacts before content reaches Notion. Also provides `sanitize_investor_list()` to clean person-name artifacts from investor lists.
+
+**Integration:** In `funding-intel-brief.py`:
+```python
+from content_sanitizer import sanitize_blocks, sanitize_investor_list
+
+# Before writing blocks to Notion:
+clean_blocks = sanitize_blocks(raw_blocks)
+
+# Before writing investor list:
+clean_investors = sanitize_investor_list(raw_investors)
+```
+
+In `hiring_intel_module.py`:
+```python
+from content_sanitizer import sanitize_blocks
+# Sanitize hiring blocks before returning:
+return sanitize_blocks(hiring_blocks)
+```
+
+### 3. `resilient_api.py` — Retry + circuit breaker for external APIs
+
+**Deploy to:** `/home/ubuntu/clawd/scripts/resilient_api.py`
+
+Wraps DuckDuckGo, Grok, Clay, and Icebreaker calls with retry logic + circuit breaking.
+
+**Integration:** In `hiring_intel_module.py`:
+```python
+from resilient_api import search_duckduckgo, call_grok
+
+# Replace direct requests.get("https://html.duckduckgo.com/...") with:
+html = search_duckduckgo(f'"{company}" "we\'re hiring"')
+if html is None:
+    return []  # Clean fallback, not error-as-signal
+
+# Replace direct Grok API calls with:
+benchmark = call_grok(prompt)
+if benchmark is None:
+    benchmark = "Competitor benchmark unavailable — API timeout. Manual review recommended."
+```
+
+### 4. `canonical_template.py` — Page structure contract
+
+**Deploy to:** `/home/ubuntu/clawd/scripts/canonical_template.py`
+
+Defines the canonical page template structure. Provides:
+- `build_canonical_blocks()` — creates skeleton pages with proper markers
+- `build_page_properties()` — creates properties including COMPANY, ROUND AMOUNT, v3 REPORT KEY
+- `validate_page_structure()` — checks if a page follows the template
+- `generate_report_key()` — generates v3 REPORT KEYs
+- `parse_amount()` / `amounts_match()` — amount parsing with ±5% tolerance
+- `slugify()` — consistent company slug generation
+
+**Integration:** In `funding-intel-brief.py`:
+```python
+from canonical_template import (
+    build_canonical_blocks,
+    build_page_properties,
+    generate_report_key,
+    amounts_match,
+    parse_amount,
+)
+
+# When creating a new page:
+blocks = build_canonical_blocks(company, amount, round_type, investors, sources)
+props = build_page_properties(company, amount, round_type, run_id)
+page = notion.pages.create(parent={"database_id": DB_ID}, properties=props, children=blocks)
+
+# When checking for duplicates:
+if amounts_match(existing_amount, new_amount):
+    logger.info("Duplicate detected — updating existing page")
+```
+
+---
+
+## ADDITIONAL NOTION-SIDE CHANGES ALREADY COMPLETED
+
+These were applied directly during the audit — do NOT repeat:
+
+1. **Schema: COMPANY property added** (rich_text) — backfilled on ~30 active pages
+2. **Schema: ROUND AMOUNT property added** (number, dollar format) — backfilled
+3. **Signal Pack REPORT KEYs backfilled** — format `signal-pack:v1:{YYYY-MM-DD}` on Mar 3-8 packs
+4. **OKX REPORT KEY upgraded** to `fundraising-intel:v3:okx:200000000`
+5. **Helios Finance markers fixed** — added `[[HIRING_INTEL_AUTO_START/END]]` around hiring section
+6. **Helios Finance errors cleaned** — DuckDuckGo + Grok error artifacts replaced with clean fallback text
+7. **Helios Finance REPORT KEY upgraded** to v3 format
+8. **AXIYM QA STATUS** changed PASS → WARN (bare skeleton, no enrichment)
+9. **QFEX QA STATUS** changed PASS → WARN (merge format, no enrichment, unverified investors)
+10. **OMNIPACT QA STATUS** already WARN (correct)
+11. **LEGEND QA ISSUES** updated with structural note (inline founder intel, non-standard but valid)
