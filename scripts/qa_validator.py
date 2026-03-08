@@ -92,7 +92,7 @@ def get_notion_client():
 # Page content extraction
 # ---------------------------------------------------------------------------
 
-def extract_page_text(blocks: list) -> str:
+def extract_page_text(blocks: list, _notion=None) -> str:
     """Recursively extract all text from Notion blocks."""
     texts = []
     for block in blocks:
@@ -107,9 +107,10 @@ def extract_page_text(blocks: list) -> str:
         # Recurse into children
         if block.get("has_children"):
             try:
-                notion = get_notion_client()
-                children = notion.blocks.children.list(block_id=block["id"])
-                texts.append(extract_page_text(children.get("results", [])))
+                if _notion is None:
+                    _notion = get_notion_client()
+                children = _notion.blocks.children.list(block_id=block["id"])
+                texts.append(extract_page_text(children.get("results", []), _notion))
             except Exception:
                 pass
 
@@ -373,12 +374,12 @@ def validate_recent(hours: int = 24, dry_run: bool = False):
     notion = get_notion_client()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-    # Query pages edited after cutoff
+    # Query pages with DATE after cutoff
     results = notion.databases.query(
         database_id=REPORT_BASE_DB,
         filter={
             "property": "DATE",
-            "created_time": {"after": cutoff.isoformat()},
+            "date": {"after": cutoff.isoformat()},
         },
         sorts=[{"property": "DATE", "direction": "descending"}],
     )

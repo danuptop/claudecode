@@ -522,3 +522,20 @@ These were applied directly during the audit — do NOT repeat:
 15. **IZUMI FINANCE hiring markers added** — `[[HIRING_INTEL_AUTO_START/END]]` wrapped around hiring section + DuckDuckGo error cleaned
 16. **SATS TERMINAL $0 STRATEGIC archived** (`31df30f9-bdff-819d`) — F-11 $0 bad-parse duplicate of Signal Pack canonical
 17. **PROBABLE $0 M&A QA STATUS** changed PASS → WARN (missing RUN ID, SOURCE SKILL; CZ entries are noise)
+
+---
+
+## BUGS FIXED IN HELPER SCRIPTS (2026-03-08, QA audit pass)
+
+The following bugs were found and fixed in the 4 helper scripts before deployment:
+
+| # | File | Bug | Fix |
+|---|------|-----|-----|
+| 1 | `content_sanitizer.py` | `ERROR_RE` used in `clean_page()` but never defined — **NameError crash** | Added `ERROR_RE` compiled regex at module level |
+| 2 | `content_sanitizer.py` | Traceback regex with `re.DOTALL` + lazy `.*?` under-matches at end of content | Changed to greedy pattern matching indented continuation lines |
+| 3 | `canonical_template.py` | `SOURCE SKILL` set as `rich_text` but Notion schema defines it as **Select** — API rejection | Changed to `{"select": {"name": "funding-intel-brief"}}` |
+| 4 | `canonical_template.py` | `QA STATUS` hardcoded to `PASS` at page creation, before validator runs — false pass if hook fails | Changed initial status to `PENDING` |
+| 5 | `canonical_template.py` | Dead variable `date_str` computed but never used | Removed |
+| 6 | `qa_validator.py` | `validate_recent()` uses `created_time` filter on `DATE` property — wrong Notion filter type, **`--recent` mode broken** | Changed to `date` filter type |
+| 7 | `qa_validator.py` | `extract_page_text()` creates a new Notion client per recursive call | Reuses client via `_notion` parameter |
+| 8 | `resilient_api.py` | First `except (ConnectionError, TimeoutError)` catches Python builtins, not `requests` exceptions — **dead code** for its intended purpose | Dynamically imports `requests.exceptions` and builds proper retryable tuple |

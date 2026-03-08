@@ -141,6 +141,18 @@ def resilient_call(
         )
         return fallback
 
+    # Build tuple of retryable exception types
+    _retryable = (ConnectionError, TimeoutError, OSError)
+    try:
+        import requests.exceptions as _rexc
+        _retryable = (
+            ConnectionError, TimeoutError, OSError,
+            _rexc.ConnectionError, _rexc.Timeout, _rexc.ReadTimeout,
+            _rexc.ConnectTimeout,
+        )
+    except ImportError:
+        pass
+
     last_exception = None
     for attempt in range(retries + 1):
         try:
@@ -152,7 +164,7 @@ def resilient_call(
 
             return result
 
-        except (ConnectionError, TimeoutError) as e:
+        except _retryable as e:
             last_exception = e
             if on_error:
                 on_error(e)
@@ -161,25 +173,13 @@ def resilient_call(
                 f"{type(e).__name__}: {e}"
             )
         except Exception as e:
-            # Check for requests library exceptions
-            exc_name = type(e).__name__
-            if exc_name in ("ConnectionError", "Timeout", "ReadTimeout",
-                            "ConnectTimeout", "MaxRetryError"):
-                last_exception = e
-                if on_error:
-                    on_error(e)
-                logger.warning(
-                    f"Attempt {attempt + 1}/{retries + 1} failed: "
-                    f"{exc_name}: {e}"
-                )
-            else:
-                # Non-retryable error — fail immediately
-                logger.error(f"Non-retryable error: {exc_name}: {e}")
-                if circuit_breaker:
-                    circuit_breaker.record_failure()
-                if on_error:
-                    on_error(e)
-                return fallback
+            # Non-retryable error — fail immediately
+            logger.error(f"Non-retryable error: {type(e).__name__}: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            if on_error:
+                on_error(e)
+            return fallback
 
         # Exponential backoff before retry
         if attempt < retries:

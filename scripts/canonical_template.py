@@ -276,17 +276,16 @@ def build_page_properties(
     Returns a dict suitable for notion.pages.create(properties=...).
     """
     now = datetime.now(timezone.utc)
-    date_str = now.strftime("%b %d, %Y").upper().replace(" 0", " ")
     amount_str = _format_amount(round_amount)
     title = f"{company} — {amount_str} {round_type} | FUNDING INTEL | {now.strftime('%b').upper()} {now.strftime('%d').lstrip('0')}, {now.year}"
 
     props = {
         "ENTRY": {"title": [{"text": {"content": title}}]},
         "TYPE": {"select": {"name": "FUNDRAISING INTEL"}},
-        "SOURCE SKILL": {"rich_text": [{"text": {"content": "funding-intel-brief"}}]},
+        "SOURCE SKILL": {"select": {"name": "funding-intel-brief"}},
         "REPORT KEY": {"rich_text": [{"text": {"content": generate_report_key(company, round_amount)}}]},
         "RUN ID": {"rich_text": [{"text": {"content": run_id}}]},
-        "QA STATUS": {"select": {"name": "PASS"}},
+        "QA STATUS": {"select": {"name": "PENDING"}},
         "QA ISSUES": {"rich_text": [{"text": {"content": ""}}]},
         "COMPANY": {"rich_text": [{"text": {"content": company}}]},
         "ROUND AMOUNT": {"number": round_amount},
