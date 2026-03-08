@@ -350,8 +350,47 @@ The correct behavior is **replace between markers** (idempotent). The bug was **
 | F-08 | LOW | founder-intel-pipeline.py | Not patched — duplicate outreach channels |
 | F-09 | HIGH | funding-intel-brief.py | **PATCH READY** — amount-tolerance matching |
 | F-10 | MEDIUM | founder-intel-pipeline.py | Not patched — garbage POC from scraper |
+| F-11 | CRITICAL | funding-intel-brief.py | **PATCH READY** — $0 bad-parse bypasses all dedup |
 
 F-07, F-08, F-10 are deferred — they require deeper refactoring of the Grok prompt templates and website scraper logic.
+
+### F-11: $0 / "undisclosed" amount creates phantom duplicates
+
+**Severity:** CRITICAL — pipeline keeps creating new $0 pages every run
+**Root cause:** When the pipeline fails to parse a dollar amount from a source article, it writes `amount=0` and `round_type=STRATEGIC`. This generates REPORT KEYs like `fundraising-intel:v3:axiym:0` which never match the real page's key (`fundraising-intel:v3:axiym:8180000`). The dedup system sees them as separate deals.
+
+**Already archived (3 pages):**
+- AXIYM — USD 0 STRATEGIC (`31df30f9-bdff-8112`) → canonical is $8.2M SEED (`31df30f9-bdff-81f4`)
+- IZUMI FINANCE — USD 0 STRATEGIC (`31df30f9-bdff-818c`) → canonical is $27.6M STRATEGIC (`31bf30f9-bdff-81ac`)
+- SATS TERMINAL — $0 STRATEGIC (`31df30f9-bdff-819d`) → canonical is Signal Pack (`319f30f9-bdff-8154`)
+
+**Required fix in `funding-intel-brief.py`:**
+```python
+# BEFORE generating REPORT KEY, check for $0 / undisclosed amounts:
+if round_amount == 0 or round_amount is None:
+    # Search by company name alone — $0 means the amount wasn't parseable
+    existing = notion.databases.query(
+        database_id=REPORT_BASE_DB,
+        filter={
+            "and": [
+                {"property": "COMPANY", "rich_text": {"contains": company_name}},
+                {"property": "TYPE", "select": {"equals": "FUNDRAISING INTEL"}},
+            ]
+        }
+    )
+    if existing["results"]:
+        # Found existing page for this company — skip, do not create $0 duplicate
+        logger.warning(
+            f"Skipping $0 page for {company_name} — "
+            f"existing page found: {existing['results'][0]['id']}"
+        )
+        return existing["results"][0]["id"]
+
+    # No existing page AND amount is $0 — create but flag it
+    logger.warning(f"Creating $0 page for {company_name} — no existing page found, amount parse failed")
+```
+
+This must be applied BEFORE the `generate_report_key()` call and BEFORE `notion.pages.create()`.
 
 ---
 
@@ -477,3 +516,9 @@ These were applied directly during the audit — do NOT repeat:
 9. **QFEX QA STATUS** changed PASS → WARN (merge format, no enrichment, unverified investors)
 10. **OMNIPACT QA STATUS** already WARN (correct)
 11. **LEGEND QA ISSUES** updated with structural note (inline founder intel, non-standard but valid)
+12. **AXIYM $0 STRATEGIC archived** (`31df30f9-bdff-8112`) — F-11 $0 bad-parse duplicate of $8.2M SEED canonical
+13. **IZUMI FINANCE $0 STRATEGIC archived** (`31df30f9-bdff-818c`) — F-11 $0 bad-parse duplicate of $27.6M STRATEGIC canonical
+14. **IZUMI FINANCE REPORT KEY upgraded** to `fundraising-intel:v3:izumi-finance:27600000` (was legacy date format)
+15. **IZUMI FINANCE hiring markers added** — `[[HIRING_INTEL_AUTO_START/END]]` wrapped around hiring section + DuckDuckGo error cleaned
+16. **SATS TERMINAL $0 STRATEGIC archived** (`31df30f9-bdff-819d`) — F-11 $0 bad-parse duplicate of Signal Pack canonical
+17. **PROBABLE $0 M&A QA STATUS** changed PASS → WARN (missing RUN ID, SOURCE SKILL; CZ entries are noise)
