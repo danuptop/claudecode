@@ -16,7 +16,7 @@
 - **Failure mode:** For every FUNDRAISING INTEL event, the pipeline creates BOTH:
   1. An embedded outreach section inside the canonical page (via `[[OUTREACH_INTEL_AUTO_START]]`/`[[OUTREACH_INTEL_AUTO_END]]` markers) — correct behavior
   2. A standalone new page with TYPE=OUTREACH TARGET — redundant
-- **Evidence:** Every target company had exactly 2 pages: one canonical FUNDRAISING INTEL + one standalone OUTREACH TARGET (17 confirmed clusters across the database)
+- **Evidence:** Every target company had exactly 2 pages: one canonical FUNDRAISING INTEL + one standalone OUTREACH TARGET (20 confirmed clusters across the database)
 - **Standalone pages have:** Empty REPORT KEY, empty RUN ID, SOURCE SKILL=founder-intel-pipeline
 - **User impact:** Report Base is cluttered with duplicate pages. Users see 2 entries per event. The standalone pages have LOWER quality (founder not found, no Clay enrichment, DuckDuckGo errors embedded) compared to the canonical pages.
 
@@ -131,6 +131,7 @@
 | JPYC | `31cf30f9-bdff-816e` | `31af30f9-bdff-8174` |
 | IZUMI FINANCE | `31cf30f9-bdff-8151` | `31bf30f9-bdff-81ac` |
 | IDOS | `31cf30f9-bdff-8129` | `31bf30f9-bdff-815c` |
+| AKAVE | `31cf30f9-bdff-818a` | `317f30f9-bdff-81aa` |
 
 #### 2d. OKX cluster triaged
 
@@ -145,7 +146,7 @@
 | Page | Type | Action |
 |------|------|--------|
 | `31cf30f9-bdff-81d8` | FUNDRAISING INTEL (v3 canonical) | **CANONICAL** — confirmed, REPORT KEY=fundraising-intel:v3:arq:70000000 |
-| `319f30f9-bdff-81a8` | SIGNAL PACK (legacy, crypto-fundraising-monitor) | **RETAINED** — different report type, contains CEO Fernando Terrés identification not in canonical |
+| `319f30f9-bdff-81a8` | SIGNAL PACK (legacy, crypto-fundraising-monitor) | **RETAINED** — different report type. CEO Fernando Terrés migrated to canonical page. |
 | `31cf30f9-bdff-81f7` | OUTREACH TARGET (standalone) | **ARCHIVED** — garbage POC ("About Harrassment"), redundant |
 
 ### Phase 3: Script Patches (Created — Pending Deployment to Tony)
@@ -175,7 +176,7 @@ Three patch files in `patches/`:
 | BASED — no archived-dup refs in body | **PASSED** | Replaced with clean audit callout |
 | UTEXO — canonical page clean | **PASSED** | No issues found |
 | All 6 target canonicals LAST AUDITED AT set | **PASSED** | All set to 2026-03-08T21:30:00Z |
-| All 17 standalone outreach pages archived | **PASSED** | All marked QA STATUS=SKIP with [ARCHIVED] title |
+| All 20 standalone outreach pages archived | **PASSED** | All marked QA STATUS=SKIP with [ARCHIVED] title |
 | OKX cluster: 1 canonical, 2 archived | **PASSED** | $200M canonical, $0 and $25B archived with FAIL |
 | ARQ cluster: canonical + legacy retained | **PASSED** | v3 canonical confirmed, SIGNAL PACK retained, outreach archived |
 | Script patches created | **PASSED** | 3 patch files in repo |
@@ -185,7 +186,6 @@ Three patch files in `patches/`:
 ### Residual Risk
 
 1. **Script patches not yet deployed** — Root cause (standalone page creation) is NOT fixed in production. New pipeline runs will create new standalone outreach pages.
-2. **ARQ canonical missing CEO data** — Fernando Terrés (CEO) is identified in the SIGNAL PACK page (`319f30f9`) but not in the v3 canonical (`31cf30f9-bdff-81d8`). Should be migrated.
 
 ---
 
@@ -195,11 +195,11 @@ Three patch files in `patches/`:
 
 | Metric | Before | After |
 |--------|--------|-------|
-| Standalone OUTREACH TARGET pages (active) | 17 | 0 (all archived) |
+| Standalone OUTREACH TARGET pages (active) | 20 | 0 (all archived) |
 | OKX duplicate pages | 3 | 1 canonical |
 | Canonical pages with archived-dup body refs | 4 | 0 |
 | Canonical pages with corrupt investor lists | 2 | 0 |
-| Total pages archived this audit | 0 | 19 |
+| Total pages archived this audit | 0 | 22 |
 
 ### Cleaned Canonical Page IDs (target companies)
 
