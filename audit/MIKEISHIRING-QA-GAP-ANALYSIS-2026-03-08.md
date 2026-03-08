@@ -264,3 +264,33 @@ The MikeIsHiring QA report gives a **false sense of confidence**. It reports "Ov
 The automated QA runner validates that the APIs are up, but it does not validate that the data behind them is correct. The forensic audit found 11 bugs, none of which the QA runner could detect.
 
 **Bottom line:** The QA runner needs a data quality layer, threshold-based alerting, and Notion output configuration. The code patches need to be deployed to Tony before the next pipeline run.
+
+---
+
+## 11. FIXES APPLIED DURING THIS AUDIT
+
+### Code Bugs Fixed (8 total)
+
+| # | File | Bug | Fix |
+|---|------|-----|-----|
+| 1 | `content_sanitizer.py` | `ERROR_RE` undefined — **NameError crash** | Added compiled regex at module level |
+| 2 | `content_sanitizer.py` | Traceback regex under-matches at end of content | Greedy pattern matching indented lines |
+| 3 | `canonical_template.py` | `SOURCE SKILL` as `rich_text` but schema is **Select** | Changed to `{"select": {...}}` |
+| 4 | `canonical_template.py` | `QA STATUS` hardcoded `PASS` before validation | Changed to `PENDING` |
+| 5 | `canonical_template.py` | Dead `date_str` variable | Removed |
+| 6 | `qa_validator.py` | `validate_recent()` wrong filter type — **`--recent` broken** | `created_time` → `date` |
+| 7 | `qa_validator.py` | New Notion client per recursive call | Reuse via `_notion` param |
+| 8 | `resilient_api.py` | `except (ConnectionError, TimeoutError)` is dead code | Import `requests.exceptions` properly |
+
+### Notion Page Fixes (12 pages)
+
+- 7 REPORT KEYs upgraded from legacy to v3 format
+- 4 DuckDuckGo error artifacts cleaned from hiring signals
+- 10 pages got missing `[[HIRING_INTEL_AUTO_START/END]]` markers
+- 6 pages got missing `[[OUTREACH_INTEL_AUTO_START/END]]` markers
+- PROBABLE backfilled with RUN ID + SOURCE SKILL
+- 3 false-PASS pages corrected to WARN
+
+### Verified: Archived Pages Are Properly Deleted
+
+All 22 "soft-archived" pages (title-renamed with `[ARCHIVED]`) were confirmed to have `deleted` metadata in the Notion API. They do not appear in active database views. The background audit agent's claim they were "still active" was incorrect — Notion's fetch tool can retrieve deleted pages by direct URL, but they are marked `deleted` and invisible in normal database queries.
