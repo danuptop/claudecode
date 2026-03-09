@@ -53,6 +53,19 @@ ERROR_PATTERNS = [
     r"Search error: HTTPSConnectionPool",
 ]
 
+# Placeholder patterns that indicate unfilled template sections.
+# These are not "errors" but signal that enrichment failed silently.
+PLACEHOLDER_PATTERNS = [
+    "Clay: not attempted",
+    "not attempted",
+    "Sources pending",
+    "Outreach enrichment pending",
+    "Hiring intelligence pending",
+    "MANUAL RESEARCH NEEDED",
+    "Description: N/A",
+    "Company description is N/A",
+]
+
 ERROR_RE = re.compile("|".join(ERROR_PATTERNS), re.IGNORECASE)
 
 # Marker pairs that should be present on enriched FUNDRAISING INTEL pages
@@ -273,7 +286,114 @@ def validate_page(
                 "— round type not resolved from source."
             )
 
+    # ---- Check 10: Non-fundraising event detection ----
+    if page_type == "FUNDRAISING INTEL":
+        _check_non_fundraising_event(page_content, page_props, result)
+
+    # ---- Check 11: Template-fill cascade detection ----
+    if page_type == "FUNDRAISING INTEL":
+        _check_template_fill_cascade(page_content, result)
+
+    # ---- Check 12: Placeholder pattern detection ----
+    placeholder_hits = [p for p in PLACEHOLDER_PATTERNS if p.lower() in page_content.lower()]
+    if placeholder_hits:
+        if len(placeholder_hits) >= 3:
+            result.fail(
+                f"Multiple unfilled placeholders ({len(placeholder_hits)}): "
+                f"{', '.join(placeholder_hits[:3])}. Page is mostly template fill."
+            )
+        else:
+            result.warn(
+                f"Unfilled placeholder(s): {', '.join(placeholder_hits)}"
+            )
+
     return result
+
+
+def _check_non_fundraising_event(content: str, props: dict, result: QAResult):
+    """Detect pages that are not actual fundraising rounds."""
+    title = _get_text_prop(props, "ENTRY").upper()
+
+    # M&A events are not fundraising rounds
+    if " M&A " in title or " ACQUISITION" in title or " MERGER" in title:
+        result.fail(
+            "Non-fundraising event: M&A/acquisition. Not an actionable fundraising round."
+        )
+
+    # Public token sales are retail, not VC fundraising
+    if "PUBLIC SALE" in title or "TOKEN SALE" in title or "ICO" in title:
+        result.warn(
+            "Public token/ICO sale — not a VC fundraising round. "
+            "Limited outreach value."
+        )
+
+    # Cumulative funding totals (e.g., "$261M FUNDING") are not new rounds
+    if "FUNDING" in title and "FUNDRAISING INTEL" not in title:
+        result.warn(
+            "Possibly cumulative funding total, not a specific round. Verify."
+        )
+
+    # Absurdly high amounts are likely valuations, not round sizes
+    round_amount_prop = props.get("ROUND AMOUNT", {})
+    amount = (
+        round_amount_prop.get("number")
+        if round_amount_prop.get("type") == "number"
+        else None
+    )
+    if amount and amount >= 10_000_000_000:  # $10B+
+        result.fail(
+            f"Round amount ${amount:,.0f} is likely a valuation, not a round size."
+        )
+    elif amount and amount >= 1_000_000_000:  # $1B+
+        result.warn(
+            f"Round amount ${amount:,.0f} is unusually high — verify it's the "
+            "round size, not the company valuation."
+        )
+
+
+def _check_template_fill_cascade(content: str, result: QAResult):
+    """
+    Detect pages where ALL enrichment failed — template fill masquerading
+    as intelligence. A page with 4+ unfilled sections should FAIL.
+    """
+    indicators = 0
+
+    # POC not found
+    if "PRIMARY POC NOT IDENTIFIED" in content or "POC NOT IDENTIFIED" in content:
+        indicators += 1
+
+    # Company description is N/A or missing
+    if "Description: N/A" in content or "description pending" in content.lower():
+        indicators += 1
+
+    # No investors identified
+    if ("Investors: Not listed" in content
+            or "Investors: Unknown" in content
+            or "No investors identified" in content):
+        indicators += 1
+
+    # Hiring section is entirely template
+    if "None found as of" in content and "Hiring inferred from" in content:
+        indicators += 1
+
+    # Competitor benchmark failed
+    if "Competitor benchmark unavailable" in content or "API timeout" in content:
+        indicators += 1
+
+    # Contact details not attempted
+    if "not attempted" in content.lower():
+        indicators += 1
+
+    if indicators >= 4:
+        result.fail(
+            f"Template fill cascade: {indicators}/6 enrichment sections are "
+            "unfilled placeholders. Page adds negative value — better as bare skeleton."
+        )
+    elif indicators >= 3:
+        result.warn(
+            f"Mostly template fill: {indicators}/6 enrichment sections are "
+            "placeholders. Manual research recommended."
+        )
 
 
 def _check_fundraising_intel(content: str, props: dict, result: QAResult):
