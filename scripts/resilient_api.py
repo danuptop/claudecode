@@ -39,8 +39,11 @@ try:
     _RequestsConnectionError = _requests.exceptions.ConnectionError
     _RequestsTimeout = _requests.exceptions.Timeout
 except ImportError:
-    _RequestsConnectionError = type(None)  # Will never match
-    _RequestsTimeout = type(None)
+    class _RequestsConnectionError(Exception):
+        """Placeholder — requests not installed; will never be raised."""
+
+    class _RequestsTimeout(Exception):
+        """Placeholder — requests not installed; will never be raised."""
 
 logger = logging.getLogger("resilient_api")
 
