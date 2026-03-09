@@ -373,14 +373,14 @@ def validate_recent(hours: int = 24, dry_run: bool = False):
     notion = get_notion_client()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-    # Query pages edited after cutoff
+    # Query pages edited after cutoff (use built-in last_edited_time filter)
     results = notion.databases.query(
         database_id=REPORT_BASE_DB,
         filter={
-            "property": "DATE",
-            "created_time": {"after": cutoff.isoformat()},
+            "timestamp": "last_edited_time",
+            "last_edited_time": {"after": cutoff.isoformat()},
         },
-        sorts=[{"property": "DATE", "direction": "descending"}],
+        sorts=[{"timestamp": "last_edited_time", "direction": "descending"}],
     )
 
     pages = results.get("results", [])
@@ -400,8 +400,57 @@ def validate_recent(hours: int = 24, dry_run: bool = False):
 
 
 # ---------------------------------------------------------------------------
-# Integration hook — call from other pipeline scripts
+# Integration hooks — call from other pipeline scripts
 # ---------------------------------------------------------------------------
+
+def pre_write_validate(
+    page_props: dict,
+    page_blocks: list,
+    page_type: str = "FUNDRAISING INTEL",
+) -> QAResult:
+    """
+    Pre-write gate: validate content BEFORE writing to Notion.
+
+    Call this before notion.pages.create() or notion.pages.update().
+    If the result is FAIL, do NOT write — fix the content first.
+
+    Args:
+        page_props: The properties dict you are about to write.
+        page_blocks: The block children you are about to write.
+        page_type: The TYPE value for the page.
+
+    Returns:
+        QAResult. Check result.status — if "FAIL", abort the write.
+
+    Usage in pipeline scripts:
+        from qa_validator import pre_write_validate
+        qa = pre_write_validate(props, blocks)
+        if qa.status == "FAIL":
+            logger.error(f"Pre-write QA FAIL: {qa.summary}")
+            # Do NOT write to Notion
+        else:
+            page = notion.pages.create(...)
+    """
+    # Extract text from blocks for content validation
+    content_parts = []
+    for block in page_blocks:
+        block_type = block.get("type", "")
+        type_data = block.get(block_type, {})
+        for rt in type_data.get("rich_text", []):
+            content_parts.append(rt.get("plain_text", "") if isinstance(rt, dict) else "")
+        # Also check text.content for blocks built via helper functions
+        text_obj = type_data.get("text", {})
+        if isinstance(text_obj, dict) and "content" in text_obj:
+            content_parts.append(text_obj["content"])
+    content = "\n".join(content_parts)
+
+    result = validate_page(page_props, content, page_type)
+    if result.status == "FAIL":
+        logger.error(f"PRE-WRITE QA GATE: FAIL — {result.summary}")
+    else:
+        logger.info(f"PRE-WRITE QA GATE: {result.status}")
+    return result
+
 
 def post_write_hook(page_id: str, dry_run: bool = False) -> str:
     """

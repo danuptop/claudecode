@@ -34,7 +34,7 @@
 
 These changes were made directly to Notion pages. They are complete. Do not repeat them.
 
-1. **Archived 20 standalone OUTREACH TARGET pages** — All had TYPE=OUTREACH TARGET, empty REPORT KEY, SOURCE SKILL=founder-intel-pipeline. Titles updated to include `[ARCHIVED — DUPLICATE OF CANONICAL]`, QA STATUS set to SKIP. Full manifest in audit report Section 4.
+1. **Archived 18 standalone OUTREACH TARGET pages** — All had TYPE=OUTREACH TARGET, empty REPORT KEY, SOURCE SKILL=founder-intel-pipeline. Titles updated to include `[ARCHIVED — DUPLICATE OF CANONICAL]`, QA STATUS set to SKIP. Full manifest in audit report Section 4.
 
 2. **Archived 2 OKX duplicate pages** — $25B bad-parse page and $0 placeholder page both archived with QA STATUS=FAIL. $200M page (`31cf30f9-bdff-817e`) confirmed as canonical.
 
@@ -43,6 +43,24 @@ These changes were made directly to Notion pages. They are complete. Do not repe
 4. **Fixed investor lists** — CYCLOPS: removed 6 person-name artifacts (e.g., "Alex Wilson (co-founder"), added Shift4 Payments. USD.AI: removed 3 corrupt entries (e.g., "David Choi (CEO/co-founder").
 
 5. **Migrated ARQ CEO data** — Fernando Terrés (CEO) + HQ (Mexico City) migrated from legacy SIGNAL PACK page to canonical ARQ page (`31cf30f9-bdff-81d8`).
+
+---
+
+## DEPLOYMENT CHECKLIST
+
+> **All commands below run ON TONY** unless marked `[LOCAL]`.
+> Transfer files from local repo to Tony via: `scp <local-path> tony:/home/ubuntu/clawd/scripts/`
+
+| # | Step | Where | Command / Action |
+|---|------|-------|-----------------|
+| 0 | **PAUSE PIPELINE** | Tony | `crontab -e` — comment out all `founder-intel-pipeline`, `funding-intel-brief`, `outreach-pipeline-trigger` cron entries. This prevents new buggy runs between cleanup and patch deployment. |
+| 1 | Back up scripts | Tony | See STEP 0 below |
+| 2 | Transfer new modules | Local | `scp scripts/{qa_validator,content_sanitizer,resilient_api,canonical_template}.py tony:/home/ubuntu/clawd/scripts/` |
+| 3 | Apply patches to 3 scripts | Tony | See SCRIPT 1/2/3 sections below |
+| 4 | Syntax validation | Tony | `python3 -c 'import ast; ast.parse(open("script.py").read())'` for each |
+| 5 | Dry-run test | Tony | `python3 scripts/funding-intel-brief.py --dry-run --company "CROSSOVER MARKETS"` |
+| 6 | **RESUME PIPELINE** | Tony | `crontab -e` — uncomment the cron entries from step 0 |
+| 7 | Commit & sync | Tony | `git add ... && git commit ...` then run `up top sync` |
 
 ---
 
@@ -407,7 +425,16 @@ Automated QA validator that runs after every pipeline write. Sets QA STATUS base
 - WARN: Missing outreach/hiring markers, <3 investors, no POC found, mcp_unavailable noise
 - PASS: All checks pass
 
-**Integration:** Add this to the end of `funding-intel-brief.py` and `founder-intel-pipeline.py`:
+**Integration (PRE-WRITE GATE — add BEFORE `notion.pages.create()`):**
+```python
+from qa_validator import pre_write_validate
+qa = pre_write_validate(props, blocks, page_type="FUNDRAISING INTEL")
+if qa.status == "FAIL":
+    logger.error(f"Pre-write QA FAIL: {qa.summary} — aborting write")
+    return None  # Do NOT create the page
+```
+
+**Integration (POST-WRITE HOOK — add AFTER successful write):**
 ```python
 from qa_validator import post_write_hook
 status = post_write_hook(page_id)

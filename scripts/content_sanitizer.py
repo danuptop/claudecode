@@ -38,6 +38,25 @@ from typing import Optional
 logger = logging.getLogger("content_sanitizer")
 
 # ---------------------------------------------------------------------------
+# Error detection pattern (used by clean_page CLI for counting errors)
+# ---------------------------------------------------------------------------
+
+_ERROR_DETECT_PATTERNS = [
+    r"HTTPSConnectionPool\(",
+    r"Max retries exceeded",
+    r"Read timed out",
+    r"\[Grok error:",
+    r"mcp_unavailable",
+    r"ConnectionError\(",
+    r"Traceback \(most recent call last\)",
+    r"requests\.exceptions\.",
+    r"TimeoutError",
+    r"Search error: HTTPSConnectionPool",
+]
+
+ERROR_RE = re.compile("|".join(_ERROR_DETECT_PATTERNS), re.IGNORECASE)
+
+# ---------------------------------------------------------------------------
 # Error patterns to strip from content
 # ---------------------------------------------------------------------------
 

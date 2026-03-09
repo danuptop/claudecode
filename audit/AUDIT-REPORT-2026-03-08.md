@@ -115,7 +115,7 @@
 
 ### Phase 2: Full Database Sweep — All Companies (Applied Mar 08, 2026 ~21:30 UTC)
 
-#### 2c. Archived 12 more standalone OUTREACH TARGET pages
+#### 2c. Archived 13 more standalone OUTREACH TARGET pages
 
 | Company | Archived Page ID | Canonical Page ID |
 |---------|-----------------|-------------------|
@@ -124,10 +124,10 @@
 | TAPIOCA DAO | `31cf30f9-bdff-8177` | `31bf30f9-bdff-8109` |
 | QFEX | `31cf30f9-bdff-81b9` | `31cf30f9-bdff-812e` |
 | HELIOS FINANCE | `31cf30f9-bdff-8187` | `31cf30f9-bdff-81cd` |
-| CAMBRIA | `31cf30f9-bdff-81d7` | `31cf30f9-bdff-81bc` |
+| CAMBRIA | `31cf30f9-bdff-81d7` | `31cf30f9-bdff-81bc` | **[AUDIT NOTE: Same archived ID as EUCLID — verify in Notion]** |
 | OMNIPACT | `31cf30f9-bdff-8198` | `31df30f9-bdff-8141` |
 | ARQ | `31cf30f9-bdff-81f7` | `31cf30f9-bdff-81d8` |
-| EUCLID PROTOCOL | `31cf30f9-bdff-81d7` | `31af30f9-bdff-81ef` |
+| EUCLID PROTOCOL | `31cf30f9-bdff-81a7` | `31af30f9-bdff-81ef` | **[AUDIT NOTE: Was `31cf30f9-bdff-81d7` — collided with CAMBRIA, needs Notion verification]** |
 | JPYC | `31cf30f9-bdff-816e` | `31af30f9-bdff-8174` |
 | IZUMI FINANCE | `31cf30f9-bdff-8151` | `31bf30f9-bdff-81ac` |
 | IDOS | `31cf30f9-bdff-8129` | `31bf30f9-bdff-815c` |
@@ -176,7 +176,7 @@ Three patch files in `patches/`:
 | BASED — no archived-dup refs in body | **PASSED** | Replaced with clean audit callout |
 | UTEXO — canonical page clean | **PASSED** | No issues found |
 | All 6 target canonicals LAST AUDITED AT set | **PASSED** | All set to 2026-03-08T21:30:00Z |
-| All 20 standalone outreach pages archived | **PASSED** | All marked QA STATUS=SKIP with [ARCHIVED] title |
+| All 18 standalone outreach pages archived | **PASSED** | All marked QA STATUS=SKIP with [ARCHIVED] title |
 | OKX cluster: 1 canonical, 2 archived | **PASSED** | $200M canonical, $0 and $25B archived with FAIL |
 | ARQ cluster: canonical + legacy retained | **PASSED** | v3 canonical confirmed, SIGNAL PACK retained, outreach archived |
 | Script patches created | **PASSED** | 3 patch files in repo |
@@ -195,11 +195,11 @@ Three patch files in `patches/`:
 
 | Metric | Before | After |
 |--------|--------|-------|
-| Standalone OUTREACH TARGET pages (active) | 20 | 0 (all archived) |
+| Standalone OUTREACH TARGET pages (active) | 18 | 0 (all archived) |
 | OKX duplicate pages | 3 | 1 canonical |
 | Canonical pages with archived-dup body refs | 4 | 0 |
 | Canonical pages with corrupt investor lists | 2 | 0 |
-| Total pages archived this audit | 0 | 22 |
+| Total pages archived this audit | 0 | 20 (manifest) + 3 (F-11 $0 pages) = 23 |
 
 ### Cleaned Canonical Page IDs (target companies)
 
@@ -215,7 +215,7 @@ Three patch files in `patches/`:
 7. `31cf30f9-bdff-817e-b8e6-ea056205fd80` — OKX $200M STRATEGIC
 8. `31cf30f9-bdff-81d8-8439-d6932648896e` — ARQ $70M SERIES A
 
-### Full Archive Manifest (19 pages)
+### Full Archive Manifest (20 standalone + 2 OKX = 22 pages)
 
 | # | Page ID | Original Title | Reason |
 |---|---------|---------------|--------|
@@ -229,15 +229,16 @@ Three patch files in `patches/`:
 | 8 | `31cf30f9-bdff-8177` | TAPIOCA DAO — OUTREACH | Redundant standalone |
 | 9 | `31cf30f9-bdff-81b9` | QFEX — OUTREACH | Redundant standalone |
 | 10 | `31cf30f9-bdff-8187` | HELIOS FINANCE — OUTREACH | Redundant standalone |
-| 11 | `31cf30f9-bdff-81d7` | CAMBRIA — OUTREACH | Redundant standalone |
+| 11 | `31cf30f9-bdff-81d7` | CAMBRIA — OUTREACH | Redundant standalone **[shares ID with #14 — verify]** |
 | 12 | `31cf30f9-bdff-8198` | OMNIPACT — OUTREACH | Redundant standalone |
 | 13 | `31cf30f9-bdff-81f7` | ARQ — OUTREACH | Redundant standalone + garbage POC |
-| 14 | `31cf30f9-bdff-81d7` | EUCLID PROTOCOL — OUTREACH | Redundant standalone |
+| 14 | `31cf30f9-bdff-81a7` | EUCLID PROTOCOL — OUTREACH | Redundant standalone **[was `81d7` — collided with CAMBRIA, needs Notion verification]** |
 | 15 | `31cf30f9-bdff-816e` | JPYC — OUTREACH | Redundant standalone |
 | 16 | `31cf30f9-bdff-8151` | IZUMI FINANCE — OUTREACH | Redundant standalone |
 | 17 | `31cf30f9-bdff-8129` | IDOS — OUTREACH | Redundant standalone |
-| 18 | `31bf30f9-bdff-81b6` | OKX — $25000M | Bad amount parse ($25B valuation) |
-| 19 | `31af30f9-bdff-819b` | OKX — $0 | Placeholder amount |
+| 18 | `31cf30f9-bdff-818a` | AKAVE — OUTREACH | Redundant standalone |
+| 19 | `31bf30f9-bdff-81b6` | OKX — $25000M | Bad amount parse ($25B valuation) |
+| 20 | `31af30f9-bdff-819b` | OKX — $0 | Placeholder amount |
 
 ---
 

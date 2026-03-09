@@ -34,6 +34,14 @@ import logging
 import time
 from typing import Any, Callable, Optional
 
+try:
+    import requests as _requests
+    _RequestsConnectionError = _requests.exceptions.ConnectionError
+    _RequestsTimeout = _requests.exceptions.Timeout
+except ImportError:
+    _RequestsConnectionError = type(None)  # Will never match
+    _RequestsTimeout = type(None)
+
 logger = logging.getLogger("resilient_api")
 
 # ---------------------------------------------------------------------------
@@ -152,7 +160,8 @@ def resilient_call(
 
             return result
 
-        except (ConnectionError, TimeoutError) as e:
+        except (ConnectionError, TimeoutError, OSError,
+                _RequestsConnectionError, _RequestsTimeout) as e:
             last_exception = e
             if on_error:
                 on_error(e)
@@ -161,25 +170,13 @@ def resilient_call(
                 f"{type(e).__name__}: {e}"
             )
         except Exception as e:
-            # Check for requests library exceptions
-            exc_name = type(e).__name__
-            if exc_name in ("ConnectionError", "Timeout", "ReadTimeout",
-                            "ConnectTimeout", "MaxRetryError"):
-                last_exception = e
-                if on_error:
-                    on_error(e)
-                logger.warning(
-                    f"Attempt {attempt + 1}/{retries + 1} failed: "
-                    f"{exc_name}: {e}"
-                )
-            else:
-                # Non-retryable error — fail immediately
-                logger.error(f"Non-retryable error: {exc_name}: {e}")
-                if circuit_breaker:
-                    circuit_breaker.record_failure()
-                if on_error:
-                    on_error(e)
-                return fallback
+            # Non-retryable error — fail immediately
+            logger.error(f"Non-retryable error: {type(e).__name__}: {e}")
+            if circuit_breaker:
+                circuit_breaker.record_failure()
+            if on_error:
+                on_error(e)
+            return fallback
 
         # Exponential backoff before retry
         if attempt < retries:

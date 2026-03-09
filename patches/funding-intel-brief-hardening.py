@@ -102,3 +102,43 @@ DEPLOYMENT:
 #       if a == 0 or b == 0:
 #           return a == b
 #       return abs(a - b) / max(a, b) <= tolerance
+
+# =============================================================================
+# CHANGE 5: Block $0 / undisclosed amount phantom duplicates (F-11)
+# =============================================================================
+# CRITICAL: When the pipeline fails to parse a dollar amount, it writes
+# amount=0 and round_type=STRATEGIC. This generates REPORT KEYs like
+# "fundraising-intel:v3:axiym:0" which never match the real page's key.
+# The dedup system sees them as separate deals, creating phantom duplicates
+# on EVERY run.
+#
+# SEARCH FOR the code path that generates REPORT KEY and creates pages.
+# ADD this check BEFORE generate_report_key() and BEFORE notion.pages.create():
+#
+#   if round_amount == 0 or round_amount is None:
+#       # Search by company name alone — $0 means the amount wasn't parseable
+#       existing = notion.databases.query(
+#           database_id=REPORT_BASE_DB,
+#           filter={
+#               "and": [
+#                   {"property": "COMPANY", "rich_text": {"contains": company_name}},
+#                   {"property": "TYPE", "select": {"equals": "FUNDRAISING INTEL"}},
+#               ]
+#           }
+#       )
+#       if existing["results"]:
+#           # Found existing page for this company — skip, do not create $0 duplicate
+#           logger.warning(
+#               f"Skipping $0 page for {company_name} — "
+#               f"existing page found: {existing['results'][0]['id']}"
+#           )
+#           return existing["results"][0]["id"]
+#
+#       # No existing page AND amount is $0 — create but flag it
+#       logger.warning(
+#           f"Creating $0 page for {company_name} — "
+#           f"no existing page found, amount parse failed"
+#       )
+#
+# This prevents the OKX, AXIYM, IZUMI FINANCE, SATS TERMINAL pattern where
+# $0 pages kept being created alongside real canonicals.
