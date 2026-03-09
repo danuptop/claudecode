@@ -92,8 +92,13 @@ def get_notion_client():
 # Page content extraction
 # ---------------------------------------------------------------------------
 
-def extract_page_text(blocks: list) -> str:
-    """Recursively extract all text from Notion blocks."""
+def extract_page_text(blocks: list, notion=None) -> str:
+    """Recursively extract all text from Notion blocks.
+
+    Args:
+        blocks: List of Notion block objects.
+        notion: Optional Notion client instance (avoids re-creating per recursion).
+    """
     texts = []
     for block in blocks:
         block_type = block.get("type", "")
@@ -107,9 +112,9 @@ def extract_page_text(blocks: list) -> str:
         # Recurse into children
         if block.get("has_children"):
             try:
-                notion = get_notion_client()
-                children = notion.blocks.children.list(block_id=block["id"])
-                texts.append(extract_page_text(children.get("results", [])))
+                client = notion or get_notion_client()
+                children = client.blocks.children.list(block_id=block["id"])
+                texts.append(extract_page_text(children.get("results", []), notion=client))
             except Exception:
                 pass
 
@@ -212,17 +217,29 @@ def validate_page(
         result.fail("Empty COMPANY field — entity tracking broken.")
 
     # ---- Check 8: $0 amount detection (F-11) ----
-    if report_key and ":0" == report_key[-2:]:
+    if report_key and report_key.endswith(":0"):
         result.fail(
             "$0 amount in REPORT KEY — bad parse or non-funding event."
         )
 
+    # ---- Check 8b: ROUND AMOUNT property check (F-12) ----
+    round_amount_prop = page_props.get("ROUND AMOUNT", {})
+    round_amount_val = round_amount_prop.get("number")
+    if page_type == "FUNDRAISING INTEL" and (round_amount_val is None or round_amount_val == 0):
+        result.fail(
+            "ROUND AMOUNT is 0 or empty — amount parse failed."
+        )
+
     # ---- Check 9: Round type UNKNOWN detection (F-16) ----
-    if page_type == "FUNDRAISING INTEL" and "UNKNOWN" in page_content:
-        unknown_count = page_content.count("UNKNOWN")
-        if unknown_count >= 3:
+    if page_type == "FUNDRAISING INTEL":
+        # Only count UNKNOWN in deal-relevant contexts, not arbitrary text
+        unknown_patterns = re.findall(
+            r"(?:Round|Type|round_type|ROUND TYPE)[:\s]*UNKNOWN",
+            page_content, re.IGNORECASE
+        )
+        if len(unknown_patterns) >= 2:
             result.warn(
-                f"Round type 'UNKNOWN' appears {unknown_count} times "
+                f"Round type 'UNKNOWN' appears {len(unknown_patterns)} times "
                 "— round type not resolved from source."
             )
 
@@ -290,9 +307,15 @@ def _check_fundraising_intel(content: str, props: dict, result: QAResult):
 
     # ---- Content quality checks (F-12 through F-16) ----
 
-    # Check if POC was identified vs placeholder
+    # Check if POC was identified vs placeholder (F-12: upgrade to FAIL if
+    # combined with other template-fill indicators)
     if "PRIMARY POC NOT IDENTIFIED" in content:
-        result.warn("No POC identified — outreach section has no contact target.")
+        # If COMPANY is also empty, this is a template fill — FAIL
+        company_val = _get_text_prop(props, "COMPANY")
+        if not company_val:
+            result.fail("Template fill detected: no POC and empty COMPANY.")
+        else:
+            result.warn("No POC identified — outreach section has no contact target.")
 
     # Check if investors are actually listed
     if "Investors: Not listed" in content or "Investors: Unknown" in content:
@@ -353,6 +376,9 @@ def _get_text_prop(props: dict, name: str) -> str:
     elif prop_type == "select":
         sel = prop.get("select")
         return sel.get("name", "") if sel else ""
+    elif prop_type == "number":
+        val = prop.get("number")
+        return str(val) if val is not None else ""
 
     return ""
 
@@ -387,7 +413,7 @@ def validate_and_update(page_id: str, dry_run: bool = False) -> QAResult:
 
     # Fetch page content
     blocks = get_page_blocks(notion, page_id)
-    content = extract_page_text(blocks)
+    content = extract_page_text(blocks, notion=notion)
 
     # Run validation
     qa = validate_page(props, content, page_type)
@@ -429,11 +455,12 @@ def validate_recent(hours: int = 24, dry_run: bool = False):
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     # Query pages edited after cutoff
+    # DATE is a date property, so use "date" filter key (not "created_time")
     results = notion.databases.query(
         database_id=REPORT_BASE_DB,
         filter={
             "property": "DATE",
-            "created_time": {"after": cutoff.isoformat()},
+            "date": {"after": cutoff.isoformat()},
         },
         sorts=[{"property": "DATE", "direction": "descending"}],
     )

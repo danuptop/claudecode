@@ -121,10 +121,21 @@ _STRIP_SUFFIXES = [
 # Known company aliases → canonical slug
 # Add entries here when duplicates are discovered
 COMPANY_ALIASES: dict[str, str] = {
+    # USD.AI variants (F-12, Mar 09 audit)
     "usd-ai-permian-labs": "usd-ai",
     "usdai-permian-labs": "usd-ai",
+    "usdai": "usd-ai",
     "permian-labs": "usd-ai",
+    "usd-ai-permian": "usd-ai",
+    # LayerZero
     "layerzero-labs": "layerzero",
+    # Izumi Finance variants
+    "izumi-finance": "izumi",
+    "izumi-fi": "izumi",
+    # Crema Finance
+    "crema-finance": "crema",
+    # Sats Terminal
+    "sats-terminal": "sats-terminal",
 }
 
 
@@ -150,6 +161,7 @@ def normalize_company_slug(raw_name: str) -> str:
     for suffix in _STRIP_SUFFIXES:
         if stripped.endswith(f"-{suffix}"):
             stripped = stripped[: -(len(suffix) + 1)]
+            break  # Only strip one suffix to avoid over-stripping
     stripped = stripped.strip("-")
 
     # Check alias after stripping
@@ -157,12 +169,43 @@ def normalize_company_slug(raw_name: str) -> str:
         return COMPANY_ALIASES[stripped]
 
     # If stripping produced a different slug, prefer the stripped version
-    # only if the original had a suffix. This avoids changing slugs that
-    # naturally end in these words.
-    if stripped != slug and len(stripped) >= 2:
+    # only if the remaining part is meaningful (>= 3 chars) and isn't just
+    # a common word fragment.
+    if stripped != slug and len(stripped) >= 3:
         return stripped
 
     return slug
+
+
+def slugs_likely_match(slug_a: str, slug_b: str) -> bool:
+    """
+    Check if two company slugs likely refer to the same entity.
+
+    Uses normalization + prefix matching + simple edit distance.
+    Catches cases like 'usd-ai' vs 'usd-ai-permian-labs' that
+    alias tables might miss.
+    """
+    a = normalize_company_slug(slug_a)
+    b = normalize_company_slug(slug_b)
+
+    # Exact match after normalization
+    if a == b:
+        return True
+
+    # One is a prefix of the other (e.g., "layerzero" vs "layerzero-labs")
+    if a.startswith(b) or b.startswith(a):
+        return True
+
+    # Simple character-level similarity (Jaccard on character bigrams)
+    if len(a) >= 3 and len(b) >= 3:
+        bigrams_a = {a[i:i+2] for i in range(len(a) - 1)}
+        bigrams_b = {b[i:i+2] for i in range(len(b) - 1)}
+        if bigrams_a and bigrams_b:
+            similarity = len(bigrams_a & bigrams_b) / len(bigrams_a | bigrams_b)
+            if similarity >= 0.7:
+                return True
+
+    return False
 
 
 def generate_report_key(company: str, amount: int) -> str:

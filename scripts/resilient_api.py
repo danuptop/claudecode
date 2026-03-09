@@ -37,6 +37,19 @@ from typing import Any, Callable, Optional
 logger = logging.getLogger("resilient_api")
 
 # ---------------------------------------------------------------------------
+# Standard fallback text constants — use these instead of None for user-facing
+# content so callers don't have to handle None checks everywhere.
+# ---------------------------------------------------------------------------
+
+FALLBACK_SEARCH_UNAVAILABLE = "[Search unavailable — service timeout.]"
+FALLBACK_BENCHMARK_UNAVAILABLE = (
+    "Competitor benchmark unavailable — API timeout. Manual review recommended."
+)
+FALLBACK_ENRICHMENT_UNAVAILABLE = (
+    "Enrichment data unavailable — service timeout. Manual review recommended."
+)
+
+# ---------------------------------------------------------------------------
 # Circuit Breaker
 # ---------------------------------------------------------------------------
 
@@ -164,7 +177,8 @@ def resilient_call(
             # Check for requests library exceptions
             exc_name = type(e).__name__
             if exc_name in ("ConnectionError", "Timeout", "ReadTimeout",
-                            "ConnectTimeout", "MaxRetryError"):
+                            "ConnectTimeout", "MaxRetryError",
+                            "ChunkedEncodingError", "ContentDecodingError"):
                 last_exception = e
                 if on_error:
                     on_error(e)

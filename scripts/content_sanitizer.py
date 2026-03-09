@@ -38,6 +38,25 @@ from typing import Optional
 logger = logging.getLogger("content_sanitizer")
 
 # ---------------------------------------------------------------------------
+# Error patterns to detect (shared with qa_validator for consistency)
+# ---------------------------------------------------------------------------
+
+ERROR_PATTERNS = [
+    r"HTTPSConnectionPool\(",
+    r"Max retries exceeded",
+    r"Read timed out",
+    r"\[Grok error:",
+    r"mcp_unavailable",
+    r"ConnectionError\(",
+    r"Traceback \(most recent call last\)",
+    r"requests\.exceptions\.",
+    r"TimeoutError",
+    r"Search error: HTTPSConnectionPool",
+]
+
+ERROR_RE = re.compile("|".join(ERROR_PATTERNS), re.IGNORECASE)
+
+# ---------------------------------------------------------------------------
 # Error patterns to strip from content
 # ---------------------------------------------------------------------------
 
@@ -220,17 +239,52 @@ def _sanitize_block(block: dict) -> Optional[dict]:
     if cleaned_text == full_text:
         return block  # No changes needed
 
-    # Rebuild rich_text with cleaned content
-    # (simplified: single text span, losing formatting but preserving content)
+    # Rebuild rich_text — try to preserve formatting on unmodified spans
     if cleaned_text.strip():
         new_block = {**block}
+        new_rich_texts = _rebuild_rich_text(rich_texts, cleaned_text)
         new_block[block_type] = {
             **type_data,
-            "rich_text": [{"type": "text", "text": {"content": cleaned_text}}],
+            "rich_text": new_rich_texts,
         }
         return new_block
     else:
         return None  # Block became empty after cleaning
+
+
+def _rebuild_rich_text(original_spans: list[dict], cleaned_text: str) -> list[dict]:
+    """
+    Attempt to preserve formatting from original rich_text spans.
+
+    If the cleaned text is a substring of one original span, preserve that
+    span's annotations. Otherwise fall back to a single plain text span.
+    """
+    # Fast path: if only one span, just update its text
+    if len(original_spans) == 1:
+        span = {**original_spans[0]}
+        text_data = {**span.get("text", {}), "content": cleaned_text}
+        span["text"] = text_data
+        if "plain_text" in span:
+            span["plain_text"] = cleaned_text
+        return [span]
+
+    # Try to rebuild by cleaning each span individually
+    rebuilt = []
+    for span in original_spans:
+        span_text = span.get("plain_text", span.get("text", {}).get("content", ""))
+        clean_span = sanitize_text(span_text)
+        if clean_span.strip():
+            new_span = {**span}
+            new_span["text"] = {**span.get("text", {}), "content": clean_span}
+            if "plain_text" in new_span:
+                new_span["plain_text"] = clean_span
+            rebuilt.append(new_span)
+
+    if rebuilt:
+        return rebuilt
+
+    # Fallback: single plain text span
+    return [{"type": "text", "text": {"content": cleaned_text}}]
 
 
 def _is_error_only(text: str) -> bool:
@@ -267,9 +321,8 @@ def clean_mcp_unavailable_section(page_content: str) -> str:
 
     # Find and replace the INVESTOR & ANGEL WARM INTRO MAP section
     pattern = (
-        r"(##\s*.*INVESTOR.*WARM INTRO MAP.*\n)"  # Section heading
-        r"((?:.*\n)*?)"  # Content (greedy within section)
-        r"(?=\n##\s|\Z)"  # Until next heading or end
+        r"(##\s*[^\n]*INVESTOR[^\n]*WARM INTRO MAP[^\n]*\n)"  # Section heading
+        r"((?:(?!##\s).*\n)*)"  # Content lines (stop at next ## heading)
     )
 
     def replacement(match):
