@@ -1,7 +1,7 @@
 # MikeIsHiring — QA Audit & Gap Analysis
 
 **Date:** March 8, 2026
-**Source QA Report:** [MikeIsHiring QA Report — Run 20260306T194516Z](https://www.notion.so/31bf30f9bdff81b1ba72fb56993fa8a8)
+**Source QA Report:** [MikeIsHiring QA Report — Run 20260306T194516Z](https://www.notion.so/31ef30f9bdff81058c28d8430a17e51a)
 **Audit Branch:** `claude/audit-search-report-duplication-TNk3J` (prior work)
 **QA Branch:** `claude/audit-mikeishiring-qa-v623X` (this analysis)
 
