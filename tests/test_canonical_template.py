@@ -14,6 +14,7 @@ from canonical_template import (
     validate_page_structure,
     build_canonical_blocks,
     build_page_properties,
+    canonicalize_company,
 )
 
 
@@ -201,6 +202,26 @@ def test_build_page_properties_has_report_key():
     assert report_key == "fundraising-intel:v3:test-co:10000000"
     assert props["TYPE"]["select"]["name"] == "FUNDRAISING INTEL"
     assert props["ROUND AMOUNT"]["number"] == 10000000
+
+
+# ---------------------------------------------------------------------------
+# canonicalize_company
+# ---------------------------------------------------------------------------
+
+def test_canonicalize_known_alias():
+    # "okx exchange" should map to "okx" via aliases
+    result = canonicalize_company("OKX Exchange")
+    assert result == "okx"
+
+
+def test_canonicalize_unknown_falls_back_to_slugify():
+    result = canonicalize_company("BRAND NEW STARTUP")
+    assert result == "brand-new-startup"
+
+
+def test_canonicalize_case_insensitive():
+    result = canonicalize_company("okx")
+    assert result == "okx"
 
 
 if __name__ == "__main__":

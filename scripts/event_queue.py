@@ -179,8 +179,8 @@ class EventQueue:
                     dst = os.path.join(self._dirs["pending"], filename)
                     os.rename(path, dst)
                     recovered += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Error recovering stale event {filename}: {e}")
 
         if recovered:
             logger.info(f"Recovered {recovered} stale events in '{self.name}'")
@@ -215,8 +215,8 @@ class EventQueue:
                 if event.get("completed_at", 0) < cutoff:
                     os.remove(path)
                     purged += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Error purging event {filename}: {e}")
         if purged:
             logger.info(f"Purged {purged} old completed events from '{self.name}'")
 

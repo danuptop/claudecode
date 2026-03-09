@@ -91,7 +91,8 @@ class SourceDedupCache:
         slug = company.strip().lower().replace(" ", "-")
         # Bucket amounts to nearest 5% to catch $4.2M vs $4.25M
         if amount > 0:
-            bucket = round(amount / (amount * 0.05)) * int(amount * 0.05)
+            step = max(1, int(amount * 0.05))
+            bucket = (amount // step) * step
         else:
             bucket = 0
         return f"event:{slug}:{bucket}"

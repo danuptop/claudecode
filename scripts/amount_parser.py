@@ -35,7 +35,7 @@ logger = logging.getLogger("amount_parser")
 # ---------------------------------------------------------------------------
 
 _AMOUNT_RE = re.compile(
-    r"\$\s*([\d,.]+)\s*(billion|billion|B|million|M|thousand|K)\b",
+    r"\$\s*([\d,.]+)\s*(billion|B|million|M|thousand|K)\b",
     re.IGNORECASE,
 )
 

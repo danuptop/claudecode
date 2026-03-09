@@ -17,7 +17,7 @@ def test_register_and_get():
         reg.register(fp, "page-id-123", company="okx", round_type="series-b", amount=200000000)
         result = reg.get(fp)
         assert result is not None
-        assert result["page_id"] == "page-id-123" if "page_id" in result else True
+        assert result["page_id"] == "page-id-123"
 
 
 def test_get_missing():
