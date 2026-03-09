@@ -108,9 +108,66 @@ def slugify(text: str) -> str:
     return slug.strip("-")
 
 
+# ---------------------------------------------------------------------------
+# Company name normalization (entity resolution)
+# ---------------------------------------------------------------------------
+
+# Common suffixes that should be stripped for slug matching
+_STRIP_SUFFIXES = [
+    "labs", "protocol", "finance", "network", "dao",
+    "inc", "ltd", "co", "foundation", "ventures",
+]
+
+# Known company aliases → canonical slug
+# Add entries here when duplicates are discovered
+COMPANY_ALIASES: dict[str, str] = {
+    "usd-ai-permian-labs": "usd-ai",
+    "usdai-permian-labs": "usd-ai",
+    "permian-labs": "usd-ai",
+    "layerzero-labs": "layerzero",
+}
+
+
+def normalize_company_slug(raw_name: str) -> str:
+    """
+    Normalize a company name to a canonical slug for dedup.
+
+    Steps:
+      1. Slugify the raw name.
+      2. Check the alias table for a known mapping.
+      3. Strip common suffixes (labs, protocol, finance, etc.)
+         and check aliases again.
+      4. Return the canonical slug.
+    """
+    slug = slugify(raw_name)
+
+    # Direct alias match
+    if slug in COMPANY_ALIASES:
+        return COMPANY_ALIASES[slug]
+
+    # Try stripping suffixes
+    stripped = slug
+    for suffix in _STRIP_SUFFIXES:
+        if stripped.endswith(f"-{suffix}"):
+            stripped = stripped[: -(len(suffix) + 1)]
+    stripped = stripped.strip("-")
+
+    # Check alias after stripping
+    if stripped in COMPANY_ALIASES:
+        return COMPANY_ALIASES[stripped]
+
+    # If stripping produced a different slug, prefer the stripped version
+    # only if the original had a suffix. This avoids changing slugs that
+    # naturally end in these words.
+    if stripped != slug and len(stripped) >= 2:
+        return stripped
+
+    return slug
+
+
 def generate_report_key(company: str, amount: int) -> str:
     """Generate a v3 REPORT KEY for a fundraising intel page."""
-    return f"fundraising-intel:v3:{slugify(company)}:{amount}"
+    return f"fundraising-intel:v3:{normalize_company_slug(company)}:{amount}"
 
 
 def generate_signal_pack_key(date_str: str) -> str:

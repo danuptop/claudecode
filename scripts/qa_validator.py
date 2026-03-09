@@ -206,6 +206,26 @@ def validate_page(
     if not run_id:
         result.warn("Empty RUN ID — cannot trace to specific pipeline run.")
 
+    # ---- Check 7: COMPANY field must be populated ----
+    company = _get_text_prop(page_props, "COMPANY")
+    if not company:
+        result.fail("Empty COMPANY field — entity tracking broken.")
+
+    # ---- Check 8: $0 amount detection (F-11) ----
+    if report_key and ":0" == report_key[-2:]:
+        result.fail(
+            "$0 amount in REPORT KEY — bad parse or non-funding event."
+        )
+
+    # ---- Check 9: Round type UNKNOWN detection (F-16) ----
+    if page_type == "FUNDRAISING INTEL" and "UNKNOWN" in page_content:
+        unknown_count = page_content.count("UNKNOWN")
+        if unknown_count >= 3:
+            result.warn(
+                f"Round type 'UNKNOWN' appears {unknown_count} times "
+                "— round type not resolved from source."
+            )
+
     return result
 
 
@@ -267,6 +287,41 @@ def _check_fundraising_intel(content: str, props: dict, result: QAResult):
     # Check content length (bare skeletons are usually < 500 chars)
     if len(content.strip()) < 500:
         result.warn("Page content is very thin (<500 chars) — likely a bare skeleton.")
+
+    # ---- Content quality checks (F-12 through F-16) ----
+
+    # Check if POC was identified vs placeholder
+    if "PRIMARY POC NOT IDENTIFIED" in content:
+        result.warn("No POC identified — outreach section has no contact target.")
+
+    # Check if investors are actually listed
+    if "Investors: Not listed" in content or "Investors: Unknown" in content:
+        result.warn("No investors identified in outreach section.")
+
+    # Check if outreach angle fabricates claims about unlisted investors
+    if (
+        "solid VC backing" in content.lower()
+        and ("Not listed" in content or "No investors" in content)
+    ):
+        result.fail(
+            "Outreach angle claims 'solid VC backing' but no investors are listed — "
+            "fabricated claim."
+        )
+
+    # Check if all enrichment APIs failed
+    api_timeout_count = content.count("API timeout")
+    api_timeout_count += content.count("not attempted")
+    if api_timeout_count >= 3:
+        result.warn(
+            f"Multiple enrichment sources failed/skipped ({api_timeout_count} "
+            "entries) — content is mostly template fill."
+        )
+
+    # Check for wrong domain / description mismatch
+    if has_outreach_start:
+        desc_section = _extract_section(content, "COMPANY SNAPSHOT")
+        if desc_section and "N/A" in desc_section:
+            result.warn("Company description is N/A — domain scrape failed.")
 
 
 def _check_signal_pack(content: str, result: QAResult):
