@@ -36,7 +36,7 @@ Usage:
     issues = validate_page_structure(page_content_text)
 
 Deployment:
-    Place at: /home/ubuntu/clawd/scripts/canonical_template.py
+    Place at: scripts/canonical_template.py
     Import from: funding-intel-brief.py
 """
 
@@ -44,6 +44,13 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Optional
+
+try:
+    from qa_validator import _utc_iso_now
+except ImportError:
+    def _utc_iso_now() -> str:
+        """Return current UTC time as ISO 8601 string for Notion date properties."""
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 logger = logging.getLogger("canonical_template")
 
@@ -109,9 +116,13 @@ TEMPLATE_SECTIONS = [
 # ---------------------------------------------------------------------------
 
 def slugify(text: str) -> str:
-    """Convert text to URL-safe slug."""
+    """Convert text to URL-safe slug.
+
+    Preserves dots (e.g., "USD.AI" → "usd.ai") since they are
+    meaningful in company names.
+    """
     slug = text.lower().strip()
-    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+    slug = re.sub(r"[^a-z0-9.\s-]", "", slug)
     slug = re.sub(r"[\s_]+", "-", slug)
     slug = re.sub(r"-+", "-", slug)
     return slug.strip("-")
@@ -199,12 +210,17 @@ def slugs_likely_match(slug_a: str, slug_b: str) -> bool:
     if a == b:
         return True
 
-    # One is a prefix of the other (e.g., "layerzero" vs "layerzero-labs")
-    if a.startswith(b) or b.startswith(a):
+    # One is a prefix of the other (e.g., "layerzero" vs "layerzero-labs").
+    # Require the shorter slug to be at least 4 chars to prevent false
+    # positives on short names like "sol" matching "sol-fi", "sol-ai", etc.
+    shorter, longer = sorted([a, b], key=len)
+    if len(shorter) >= 4 and longer.startswith(shorter):
         return True
 
-    # Simple character-level similarity (Jaccard on character bigrams)
-    if len(a) >= 3 and len(b) >= 3:
+    # Simple character-level similarity (Jaccard on character bigrams).
+    # Require both slugs to be at least 5 chars to avoid false positives
+    # on very short names where bigram overlap is high by chance.
+    if len(a) >= 5 and len(b) >= 5:
         bigrams_a = {a[i:i+2] for i in range(len(a) - 1)}
         bigrams_b = {b[i:i+2] for i in range(len(b) - 1)}
         if bigrams_a and bigrams_b:
@@ -277,11 +293,9 @@ def amounts_match(a: int, b: int, tolerance: float = 0.05) -> bool:
 
     Handles the BLUPRYNT case where $4.2M vs $4.25M are the same deal.
 
-    Two $0 amounts are treated as NON-matching because $0 means the amount
-    couldn't be parsed — they could be completely different deals.
+    Returns False for zero or negative amounts (unparsed / invalid data).
     """
-    if a == 0 or b == 0:
-        # $0 = unparsed amount — never match (even to another $0)
+    if a <= 0 or b <= 0:
         return False
     return abs(a - b) / max(a, b) <= tolerance
 
@@ -399,7 +413,7 @@ def build_page_properties(
     amount_str = _format_amount(round_amount)
     title = f"{company} — {amount_str} {round_type} | FUNDING INTEL | {now.strftime('%b').upper()} {now.strftime('%d').lstrip('0')}, {now.year}"
 
-    now_iso = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    now_iso = _utc_iso_now()
 
     props = {
         "ENTRY": {"title": [{"text": {"content": title}}]},
@@ -484,7 +498,11 @@ def _format_amount(amount: int) -> str:
         formatted = f"{val:.2f}".rstrip("0").rstrip(".")
         return f"${formatted}M"
     elif amount >= 1_000:
-        return f"${amount / 1_000:.0f}K"
+        val = amount / 1_000
+        if val == int(val):
+            return f"${int(val)}K"
+        formatted = f"{val:.1f}".rstrip("0").rstrip(".")
+        return f"${formatted}K"
     elif amount > 0:
         return f"${amount:,}"
     return "$0"

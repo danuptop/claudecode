@@ -23,12 +23,13 @@ Usage as CLI:
     python3 content_sanitizer.py --page-id <id> --dry-run
 
 Deployment:
-    Place at: /home/ubuntu/clawd/scripts/content_sanitizer.py
+    Place at: scripts/content_sanitizer.py
     Import from: funding-intel-brief.py, founder-intel-pipeline.py,
                  hiring_intel_module.py
 """
 
 import argparse
+import copy
 import logging
 import os
 import re
@@ -44,7 +45,7 @@ logger = logging.getLogger("content_sanitizer")
 # ---------------------------------------------------------------------------
 
 try:
-    from qa_validator import ERROR_PATTERNS, ERROR_RE
+    from qa_validator import ERROR_PATTERNS, ERROR_RE, get_notion_client, _fetch_all_children
 except ImportError:
     # Standalone fallback — keep in sync with qa_validator.ERROR_PATTERNS.
     # Expected count: 10 patterns. If qa_validator adds patterns and this
@@ -275,12 +276,9 @@ def _sanitize_block(block: dict) -> Optional[dict]:
 
     # Rebuild rich_text — try to preserve formatting on unmodified spans
     if cleaned_text.strip():
-        new_block = {**block}
+        new_block = copy.deepcopy(block)
         new_rich_texts = _rebuild_rich_text(rich_texts, cleaned_text)
-        new_block[block_type] = {
-            **type_data,
-            "rich_text": new_rich_texts,
-        }
+        new_block[block_type]["rich_text"] = new_rich_texts
         return new_block
     else:
         return None  # Block became empty after cleaning
@@ -302,20 +300,30 @@ def _rebuild_rich_text(original_spans: list[dict], cleaned_text: str) -> list[di
             span["plain_text"] = cleaned_text
         return [span]
 
-    # Try to rebuild by cleaning each span individually
+    # Try to rebuild by cleaning each span individually.
+    # Re-join the per-span results and verify they match the block-level
+    # cleaned_text. If they don't (e.g., a regex matched across span
+    # boundaries), fall back to a single plain text span using cleaned_text.
     rebuilt = []
     for span in original_spans:
         span_text = span.get("plain_text", span.get("text", {}).get("content", ""))
         clean_span = sanitize_text(span_text)
         if clean_span.strip():
-            new_span = {**span}
+            new_span = copy.deepcopy(span)
             new_span["text"] = {**span.get("text", {}), "content": clean_span}
             if "plain_text" in new_span:
                 new_span["plain_text"] = clean_span
             rebuilt.append(new_span)
 
     if rebuilt:
-        return rebuilt
+        # Verify per-span cleaning matches block-level cleaning
+        rebuilt_text = "".join(
+            s.get("plain_text", s.get("text", {}).get("content", ""))
+            for s in rebuilt
+        )
+        if rebuilt_text.strip() == cleaned_text.strip():
+            return rebuilt
+        # Mismatch — fall through to single-span fallback
 
     # Fallback: single plain text span
     return [{"type": "text", "text": {"content": cleaned_text}}]
@@ -377,28 +385,22 @@ def clean_mcp_unavailable_section(page_content: str) -> str:
 # CLI: Clean a specific Notion page
 # ---------------------------------------------------------------------------
 
-def clean_page(page_id: str, dry_run: bool = False):
-    """Fetch a Notion page, sanitize its content, and update it."""
+def _get_notion_client_standalone():
+    """Create Notion client — standalone fallback when qa_validator is not importable."""
     try:
         from notion_client import Client
     except ImportError:
         logger.error("notion-client package required: pip install notion-client")
         sys.exit(1)
-
     token = os.getenv("NOTION_TOKEN") or os.getenv("NOTION_API_KEY")
     if not token:
         logger.error("NOTION_TOKEN or NOTION_API_KEY environment variable required")
         sys.exit(1)
-    notion = Client(auth=token)
+    return Client(auth=token)
 
-    page = notion.pages.retrieve(page_id=page_id)
-    props = page.get("properties", {})
-    title_parts = props.get("ENTRY", {}).get("title", [])
-    title = "".join(p.get("plain_text", "") for p in title_parts)
 
-    logger.info(f"Processing: {title}")
-
-    # Fetch blocks
+def _fetch_blocks_standalone(notion, page_id: str) -> list:
+    """Fetch all blocks with pagination — standalone fallback."""
     blocks = []
     cursor = None
     while True:
@@ -410,6 +412,29 @@ def clean_page(page_id: str, dry_run: bool = False):
         if not resp.get("has_more"):
             break
         cursor = resp.get("next_cursor")
+    return blocks
+
+
+def clean_page(page_id: str, dry_run: bool = False):
+    """Fetch a Notion page, sanitize its content, and update it."""
+    # Use shared helpers from qa_validator if available, else standalone
+    try:
+        notion = get_notion_client()
+    except NameError:
+        notion = _get_notion_client_standalone()
+
+    page = notion.pages.retrieve(page_id=page_id)
+    props = page.get("properties", {})
+    title_parts = props.get("ENTRY", {}).get("title", [])
+    title = "".join(p.get("plain_text", "") for p in title_parts)
+
+    logger.info(f"Processing: {title}")
+
+    # Fetch blocks with pagination
+    try:
+        blocks = _fetch_all_children(notion, page_id)
+    except NameError:
+        blocks = _fetch_blocks_standalone(notion, page_id)
 
     # Count errors before
     full_text = ""

@@ -16,7 +16,7 @@ Usage:
     python3 qa_validator.py --page-id <id> --dry-run
 
 Deployment:
-    Place at: /home/ubuntu/clawd/scripts/qa_validator.py
+    Place at: scripts/qa_validator.py
     Call from: funding-intel-brief.py and founder-intel-pipeline.py
     after every page write/update.
 """
@@ -68,6 +68,11 @@ REQUIRED_MARKER_PAIRS = {
 }
 
 logger = logging.getLogger("qa_validator")
+
+
+def _utc_iso_now() -> str:
+    """Return current UTC time as ISO 8601 string for Notion date properties."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 # ---------------------------------------------------------------------------
@@ -124,12 +129,12 @@ def extract_page_text(blocks: list, notion=None) -> str:
         elif plain:
             texts.append(plain)
 
-        # Recurse into children
+        # Recurse into children (with pagination)
         if block.get("has_children"):
             try:
                 client = notion or get_notion_client()
-                children = client.blocks.children.list(block_id=block["id"])
-                texts.append(extract_page_text(children.get("results", []), notion=client))
+                child_blocks = _fetch_all_children(client, block["id"])
+                texts.append(extract_page_text(child_blocks, notion=client))
             except Exception as e:
                 block_id = block.get("id", "unknown")
                 logger.warning(f"Failed to fetch children of block {block_id}: {e}")
@@ -137,12 +142,12 @@ def extract_page_text(blocks: list, notion=None) -> str:
     return "\n".join(texts)
 
 
-def get_page_blocks(notion, page_id: str) -> list:
-    """Fetch all blocks for a page, handling pagination."""
+def _fetch_all_children(notion, block_id: str) -> list:
+    """Fetch all child blocks with pagination."""
     blocks = []
     cursor = None
     while True:
-        kwargs = {"block_id": page_id}
+        kwargs = {"block_id": block_id}
         if cursor:
             kwargs["start_cursor"] = cursor
         resp = notion.blocks.children.list(**kwargs)
@@ -151,6 +156,11 @@ def get_page_blocks(notion, page_id: str) -> list:
             break
         cursor = resp.get("next_cursor")
     return blocks
+
+
+def get_page_blocks(notion, page_id: str) -> list:
+    """Fetch all blocks for a page, handling pagination."""
+    return _fetch_all_children(notion, page_id)
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +250,11 @@ def validate_page(
 
     # ---- Check 8b: ROUND AMOUNT property check (F-12) ----
     round_amount_prop = page_props.get("ROUND AMOUNT", {})
-    round_amount_val = round_amount_prop.get("number")
+    round_amount_val = (
+        round_amount_prop.get("number")
+        if round_amount_prop.get("type") == "number"
+        else None
+    )
     if page_type == "FUNDRAISING INTEL" and (round_amount_val is None or round_amount_val == 0):
         result.fail(
             "ROUND AMOUNT is 0 or empty — amount parse failed."
@@ -422,8 +436,8 @@ def validate_and_update(page_id: str, dry_run: bool = False, notion=None) -> QAR
     page_type = _get_text_prop(props, "TYPE")
     title = _get_text_prop(props, "ENTRY") or _get_text_prop(props, "title")
 
-    # Skip archived pages
-    if "[ARCHIVED" in title.upper():
+    # Skip archived pages — match "[ARCHIVED]" or "[ARCHIVED:" tag at title start
+    if title.upper().startswith("[ARCHIVED"):
         logger.info(f"Skipping archived page: {title}")
         qa = QAResult()
         qa.status = "SKIP"
@@ -445,7 +459,7 @@ def validate_and_update(page_id: str, dry_run: bool = False, notion=None) -> QAR
         return qa
 
     # Update page properties
-    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    now_iso = _utc_iso_now()
     update_props = {
         "QA STATUS": {"select": {"name": qa.status}},
         "QA ISSUES": {
@@ -495,12 +509,12 @@ def validate_recent(hours: int = 24, dry_run: bool = False):
 
     logger.info(f"Found {len(pages)} pages created in last {hours}h")
 
-    stats = {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0}
+    stats: dict[str, int] = {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0}
     for page in pages:
         page_id = page["id"]
         try:
             qa = validate_and_update(page_id, dry_run=dry_run, notion=notion)
-            stats[qa.status] = stats.get(qa.status, 0) + 1
+            stats[qa.status] = stats.get(qa.status, 0) + 1  # safe for unknown statuses
         except Exception as e:
             logger.error(f"Error validating {page_id}: {e}")
         # Throttle to stay within Notion's rate limit (~3 req/s)

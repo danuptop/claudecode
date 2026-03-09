@@ -26,11 +26,12 @@ Usage:
     )
 
 Deployment:
-    Place at: /home/ubuntu/clawd/scripts/resilient_api.py
+    Place at: scripts/resilient_api.py
     Import from: hiring_intel_module.py, founder-intel-pipeline.py
 """
 
 import logging
+import threading
 import time
 from typing import Any, Callable, Optional
 
@@ -97,29 +98,33 @@ class CircuitBreaker:
         self.failure_count = 0
         self.last_failure_time: Optional[float] = None
         self._state = "closed"  # closed, open, half-open
+        self._lock = threading.Lock()
 
     @property
     def state(self) -> str:
-        if self._state == "open" and self.last_failure_time:
-            elapsed = time.time() - self.last_failure_time
-            if elapsed >= self.reset_after:
-                self._state = "half-open"
-        return self._state
+        with self._lock:
+            if self._state == "open" and self.last_failure_time:
+                elapsed = time.time() - self.last_failure_time
+                if elapsed >= self.reset_after:
+                    self._state = "half-open"
+            return self._state
 
     def record_success(self):
-        self.failure_count = 0
-        self._state = "closed"
+        with self._lock:
+            self.failure_count = 0
+            self._state = "closed"
 
     def record_failure(self):
-        self.failure_count += 1
-        self.last_failure_time = time.time()
-        if self.failure_count >= self.threshold:
-            self._state = "open"
-            logger.warning(
-                f"Circuit breaker [{self.name}] OPEN after "
-                f"{self.failure_count} failures. "
-                f"Reset in {self.reset_after}s."
-            )
+        with self._lock:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            if self.failure_count >= self.threshold:
+                self._state = "open"
+                logger.warning(
+                    f"Circuit breaker [{self.name}] OPEN after "
+                    f"{self.failure_count} failures. "
+                    f"Reset in {self.reset_after}s."
+                )
 
     def is_allowed(self) -> bool:
         state = self.state
@@ -218,10 +223,12 @@ def resilient_call(
                     f"{exc_name}: {e}"
                 )
             else:
-                # Non-retryable error — fail immediately
+                # Non-retryable error — fail immediately.
+                # Don't record as circuit breaker failure since this is likely
+                # a programming bug (KeyError, ValueError, etc.), not a service
+                # outage. Recording bugs as failures would prematurely open the
+                # circuit for subsequent legitimate calls.
                 logger.error(f"Non-retryable error: {exc_name}: {e}")
-                if circuit_breaker:
-                    circuit_breaker.record_failure()
                 if on_error:
                     on_error(e)
                 return fallback
@@ -281,13 +288,16 @@ def call_grok(prompt: str, timeout: int = 30, api_key: Optional[str] = None) -> 
 
     Returns response text, or None on failure.
     """
-    import requests
     import os
+    import requests
 
     key = api_key or os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY")
     if not key:
         logger.warning("No Grok API key configured")
         return None
+
+    # Sentinel to distinguish "API returned empty" from "all retries failed"
+    _EMPTY_RESPONSE = ""
 
     def _call():
         resp = requests.post(
@@ -306,19 +316,22 @@ def call_grok(prompt: str, timeout: int = 30, api_key: Optional[str] = None) -> 
         data = resp.json()
         choices = data.get("choices")
         if not choices or not isinstance(choices, list):
-            logger.warning(f"Grok API returned unexpected response: no 'choices' in {list(data.keys())}")
-            return None
+            logger.warning("Grok API returned unexpected response structure")
+            return _EMPTY_RESPONSE
         message = choices[0].get("message", {})
         content = message.get("content")
         if content is None:
             logger.warning("Grok API returned empty message content")
-            return None
+            return _EMPTY_RESPONSE
         return content
 
-    return resilient_call(
+    result = resilient_call(
         _call,
         retries=2,
         base_delay=2.0,
         fallback=None,
         circuit_breaker=grok_breaker,
     )
+
+    # Normalize empty API responses to None for callers
+    return result if result else None
