@@ -30,6 +30,7 @@ Deployment:
     Import from: funding-intel-brief.py
 """
 
+import json
 import logging
 import os
 import re
@@ -96,6 +97,39 @@ TEMPLATE_SECTIONS = [
 
 
 # ---------------------------------------------------------------------------
+# Company alias resolution
+# ---------------------------------------------------------------------------
+
+_ALIASES: Optional[dict] = None
+_ALIASES_PATH = os.path.join(os.path.dirname(__file__), "company_aliases.json")
+
+
+def _load_aliases() -> dict:
+    global _ALIASES
+    if _ALIASES is None:
+        try:
+            with open(_ALIASES_PATH, "r") as f:
+                raw = json.load(f)
+            _ALIASES = {k.lower().strip(): v for k, v in raw.items() if not k.startswith("_")}
+        except (FileNotFoundError, json.JSONDecodeError):
+            _ALIASES = {}
+    return _ALIASES
+
+
+def canonicalize_company(name: str) -> str:
+    """
+    Resolve a company name to its canonical slug via the alias table.
+
+    Falls back to slugify() if no alias is found.
+    """
+    aliases = _load_aliases()
+    key = name.lower().strip()
+    if key in aliases:
+        return aliases[key]
+    return slugify(name)
+
+
+# ---------------------------------------------------------------------------
 # Report key generation
 # ---------------------------------------------------------------------------
 
@@ -109,8 +143,8 @@ def slugify(text: str) -> str:
 
 
 def generate_report_key(company: str, amount: int) -> str:
-    """Generate a v3 REPORT KEY for a fundraising intel page."""
-    return f"fundraising-intel:v3:{slugify(company)}:{amount}"
+    """Generate a v3 REPORT KEY for a fundraising intel page, using alias resolution."""
+    return f"fundraising-intel:v3:{canonicalize_company(company)}:{amount}"
 
 
 def generate_signal_pack_key(date_str: str) -> str:
