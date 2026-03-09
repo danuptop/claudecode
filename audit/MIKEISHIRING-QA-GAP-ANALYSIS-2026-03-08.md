@@ -294,3 +294,49 @@ The automated QA runner validates that the APIs are up, but it does not validate
 ### Verified: Archived Pages Are Properly Deleted
 
 All 22 "soft-archived" pages (title-renamed with `[ARCHIVED]`) were confirmed to have `deleted` metadata in the Notion API. They do not appear in active database views. The background audit agent's claim they were "still active" was incorrect — Notion's fetch tool can retrieve deleted pages by direct URL, but they are marked `deleted` and invisible in normal database queries.
+
+---
+
+## 12. HIRING DATA CHAIN — INTEGRATION FIXES (Applied Mar 09, 2026)
+
+Four structural improvements to connect the hiring data pipeline across Report Base:
+
+### 12a. HirePulse added to Report Base as DATA QUALITY entry
+
+- **New page:** [`HIREPULSE — PLATFORM HEALTH & DATA QUALITY — MAR 06, 2026`](https://www.notion.so/31ef30f9bdff81058c28d8430a17e51a)
+- **TYPE:** DATA QUALITY | **QA STATUS:** WARN
+- **REPORT KEY:** `data-quality:hirepulse:2026-03-06`
+- **RUN ID:** `20260306T194516Z`
+- **SOURCE SKILL:** `hirepulse-qa-runner`
+- **QA ISSUES:** 4 data quality gaps (51.7% blank snippets, 42.7% missing locations, 34.4% salary coverage, 24.4% company website coverage), Notion output not configured, 4-day data staleness
+- **Content:** Run summary, data quality gap table with targets, full data chain diagram, links to all related reports
+
+**Why:** HirePulse was a standalone page outside any database. Now it's tracked in Report Base with proper TYPE/QA STATUS/RUN ID properties, making it queryable and part of the audit trail.
+
+### 12b. Cross-links established across the hiring data chain
+
+All 4 pages now link bidirectionally to related reports:
+
+| Page | Links Added |
+|------|-------------|
+| **DATA QUALITY — 2026-03-08** | → HirePulse dashboard, HirePulse Report Base entry, both DEEP DIVE reports |
+| **Crypto Hiring Geography** | → Early Stage companion, HirePulse dashboard, DATA QUALITY report, HirePulse entry |
+| **Early Stage Crypto Hiring** | → All-Stages companion, HirePulse dashboard, DATA QUALITY report, HirePulse entry |
+| **HirePulse dashboard** | → Report Base entry, both DEEP DIVE reports, DATA QUALITY report, data chain diagram |
+
+### 12c. Unified Data Health Index added to DATA QUALITY report
+
+The DATA QUALITY report now includes a combined health summary:
+- **Internal DBs (Notion):** 0/100 — all fields missing across Client/Job/Talent Base
+- **External pipeline (HirePulse):** ~45/100 — APIs healthy but 4 major data gaps
+- This gives a single-glance view of both quality monitors instead of requiring navigation between pages
+
+### 12d. DEEP DIVE reports updated with freshness context
+
+Both geography reports (25 days old as of Mar 09) now have:
+- **Freshness notice banner** at the top warning data is directional, not current
+- **Refresh instructions** pointing to the `weekly-breakdown` skill
+- **Data pipeline link** to HirePulse for checking current API health
+- **QA STATUS changed** from PASS → WARN with QA ISSUES documenting staleness
+- **LAST AUDITED AT** updated to 2026-03-09
+- **Methodology section** updated with upstream data source link to HirePulse
