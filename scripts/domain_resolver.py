@@ -62,6 +62,20 @@ KNOWN_DOMAINS: dict[str, str] = {
     "layerzero": "layerzero.network",
     "izumi": "izumi.finance",
     "crema": "crema.finance",
+    "crema-finance": "crema.finance",
+    # --- Verified from Mar 09 2026 full page audit ---
+    "backpack": "backpack.exchange",
+    "novig": "novig.bet",
+    "tapioca": "tapioca.xyz",
+    "tapioca-dao": "tapioca.xyz",
+    "euclid": "euclidprotocol.com",
+    "euclid-protocol": "euclidprotocol.com",
+    "interstate": "interstate.so",
+    "helios": "helios.finance",
+    "helios-finance": "helios.finance",
+    "probable": "probable.bet",
+    "akave": "akave.ai",
+    "arq": "arq.network",
 
     # --- Common crypto companies with non-obvious domains ---
     "alchemy": "alchemy.com",
