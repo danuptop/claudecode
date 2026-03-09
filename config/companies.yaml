@@ -1,0 +1,94 @@
+# companies.yaml — Seed Universe for HirePulse + Hiring Intent Intelligence
+#
+# This is the single source of truth for which companies the pipeline monitors.
+# Equivalent to the Web3 Jobs Scraper's companies.yaml (500+ sources).
+#
+# Sources:
+#   - Report Base: FUNDRAISING INTEL + LEAD GEN pages
+#   - Client Base: All active client companies
+#   - Manual additions: Companies added by team for coverage
+#
+# Fields:
+#   - name: Company name (display)
+#   - source_id: Stable identifier (never change this)
+#   - source: Where this entry came from (report_base, client_base, manual)
+#   - canonical_domain: Primary web domain (auto-selected if omitted)
+#   - domains: All known domains/URLs for this company
+#   - tags: Classification tags
+#   - priority: high | medium | low (affects processing order)
+#   - report_type: FUNDRAISING INTEL, LEAD GEN, CLIENT (for source tracking)
+#   - round_amount: Last known funding amount (optional)
+#   - round_type: Seed, Series A, etc. (optional)
+
+companies:
+  # --- Report Base: Fundraising Intel ---
+  - name: "Crossover Markets"
+    source_id: "crossover-markets"
+    source: report_base
+    canonical_domain: "crossovermarkets.com"
+    domains:
+      - "crossovermarkets.com"
+    tags: ["DeFi", "Trading"]
+    priority: high
+    report_type: "FUNDRAISING INTEL"
+    round_amount: 31000000
+    round_type: "Series B"
+
+  - name: "Securitize"
+    source_id: "securitize"
+    source: report_base
+    canonical_domain: "securitize.io"
+    domains:
+      - "securitize.io"
+    tags: ["RWA", "Tokenization"]
+    priority: high
+    report_type: "FUNDRAISING INTEL"
+
+  - name: "GoGoPool"
+    source_id: "gogopool"
+    source: report_base
+    canonical_domain: "gogopool.com"
+    domains:
+      - "gogopool.com"
+    tags: ["DeFi", "Staking", "Avalanche"]
+    priority: medium
+    report_type: "FUNDRAISING INTEL"
+
+  - name: "RE.AL"
+    source_id: "re-al"
+    source: report_base
+    canonical_domain: "re.al"
+    domains:
+      - "re.al"
+    tags: ["RWA", "Real Estate"]
+    priority: medium
+    report_type: "FUNDRAISING INTEL"
+
+  # --- Report Base: Lead Gen ---
+  - name: "OKX"
+    source_id: "okx"
+    source: report_base
+    canonical_domain: "okx.com"
+    domains:
+      - "okx.com"
+    tags: ["Exchange", "CEX"]
+    priority: high
+    report_type: "LEAD GEN"
+    round_amount: 200000000
+    round_type: "Unknown"
+
+  # --- Client Base ---
+  # (populated dynamically from Client Base Notion DB on each run)
+
+  # --- Manual Additions ---
+  # Add companies here that aren't in Report Base or Client Base
+  # but should be monitored for hiring intent.
+
+# Universe refresh settings
+refresh:
+  # How often to re-sync from Notion databases
+  report_base_sync_hours: 24
+  client_base_sync_hours: 12
+  # Notion database IDs (can be overridden by env vars)
+  report_base_db_id: "902d47be-68c0-4da8-832a-a52272fc7b39"
+  client_base_db_id: "14dba737-d3d2-4b1d-b1d9-ba9ef4f4141a"
