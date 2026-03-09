@@ -90,6 +90,12 @@ The only hiring signal is always:
 
 This is not intelligence. It's a fill-in-the-blank sentence.
 
+### F-17 [MEDIUM]: Vertical classifier ignores domain scrape data
+
+NOVIG is a US sports prediction market (betting platform). The domain scrape correctly identified this from novig.co. But the vertical classifier still assigned "Institutional Crypto", generating nonsensical hiring predictions (Prime Brokerage, FX/Quant Trader). The classifier uses a static default, not the scraped description.
+
+This also raises a pipeline scope question: NOVIG may not belong in a crypto fundraising pipeline at all.
+
 ### F-16 [MEDIUM]: Round type always shows UNKNOWN for enriched pages
 
 The outreach section always displays round type as "UNKNOWN" even when the source page title contains the round type (e.g., "FUNDING", "PUBLIC SALE", "SEED"). The enrichment pipeline doesn't pass round_type to the outreach template.
@@ -217,16 +223,17 @@ Run a sweep of the Mar 09 batch:
 
 ---
 
-## 5. PAGES REQUIRING IMMEDIATE ACTION
+## 5. PAGES ACTIONED
 
-| Page ID | Title | Action |
-|---------|-------|--------|
-| `31ef30f9-bdff-8176` | USD AI PERMIAN LABS — $13.4M | ARCHIVE — duplicate of USD.AI |
-| `31ef30f9-bdff-8140` | KUTT — $0 M&A | ARCHIVE — not a funding round, $0 parse |
-| `31ef30f9-bdff-81fe` | LAYERZERO — $261.3M | FIX — wrong company description, likely aggregated amount |
-| `31ef30f9-bdff-8107` | CREMA FINANCE — $5.4M | REVIEW — QA STATUS should be WARN not PASS |
-| `31ef30f9-bdff-81f9` | BACKPACK — $20M | REVIEW — QA STATUS should be WARN not PASS |
-| `31ef30f9-bdff-81ef` | NOVIG — $75M | REVIEW — not yet audited |
+| Page ID | Title | Action | Status |
+|---------|-------|--------|--------|
+| `31ef30f9-bdff-8176` | USD AI PERMIAN LABS — $13.4M | ARCHIVED — duplicate of USD.AI | ✅ DONE |
+| `31ef30f9-bdff-8140` | KUTT — $0 M&A | ARCHIVED — not a funding round, $0 parse | ✅ DONE |
+| `31ef30f9-bdff-81fe` | LAYERZERO — $261.3M | QA STATUS → FAIL — wrong company (power systems) | ✅ DONE |
+| `31ef30f9-bdff-8107` | CREMA FINANCE — $5.4M | QA STATUS → WARN — template fill, no real data | ✅ DONE |
+| `31ef30f9-bdff-81f9` | BACKPACK — $20M | QA STATUS → WARN — no POC, template fill | ✅ DONE |
+| `31ef30f9-bdff-81ef` | NOVIG — $75M | QA STATUS → WARN — sports betting, not crypto; wrong vertical | ✅ DONE |
+| `31cf30f9-bdff-81cc` | USD.AI — $19.4M (canonical) | Updated QA ISSUES with dup cross-ref, LAST AUDITED AT | ✅ DONE |
 
 ---
 
