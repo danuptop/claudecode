@@ -37,6 +37,32 @@ from typing import Any, Callable, Optional
 logger = logging.getLogger("resilient_api")
 
 # ---------------------------------------------------------------------------
+# Import requests exceptions at module level for reliable isinstance checks.
+# Falls back to sentinel classes if requests isn't installed (allows import
+# without hard dependency on requests).
+# ---------------------------------------------------------------------------
+
+try:
+    from requests.exceptions import (
+        ConnectionError as RequestsConnectionError,
+        Timeout as RequestsTimeout,
+        HTTPError as RequestsHTTPError,
+        ChunkedEncodingError,
+        ContentDecodingError,
+    )
+
+    _RETRYABLE_REQUEST_EXCEPTIONS = (
+        RequestsConnectionError,
+        RequestsTimeout,
+        RequestsHTTPError,
+        ChunkedEncodingError,
+        ContentDecodingError,
+    )
+except ImportError:
+    _RETRYABLE_REQUEST_EXCEPTIONS = ()
+    RequestsHTTPError = None
+
+# ---------------------------------------------------------------------------
 # Standard fallback text constants — use these instead of None for user-facing
 # content so callers don't have to handle None checks everywhere.
 # ---------------------------------------------------------------------------
@@ -163,20 +189,27 @@ def resilient_call(
 
             return result
 
-        except (ConnectionError, TimeoutError) as e:
-            last_exception = e
-            if on_error:
-                on_error(e)
-            logger.warning(
-                f"Attempt {attempt + 1}/{retries + 1} failed: "
-                f"{type(e).__name__}: {e}"
-            )
         except Exception as e:
-            # Check for requests library exceptions
             exc_name = type(e).__name__
-            if exc_name in ("ConnectionError", "Timeout", "ReadTimeout",
-                            "ConnectTimeout", "MaxRetryError",
-                            "ChunkedEncodingError", "ContentDecodingError"):
+
+            # Determine if this is a retryable error:
+            # 1. requests library exceptions (connection, timeout, HTTP 429/5xx)
+            # 2. Python built-in network errors
+            # 3. urllib3 MaxRetryError
+            is_retryable = (
+                (_RETRYABLE_REQUEST_EXCEPTIONS and isinstance(e, _RETRYABLE_REQUEST_EXCEPTIONS))
+                or isinstance(e, (ConnectionError, TimeoutError, OSError))
+                or exc_name in ("MaxRetryError",)
+            )
+
+            # For HTTPError, only retry on server errors (5xx) and rate limits (429).
+            # Client errors (4xx except 429) are not retryable.
+            if RequestsHTTPError and isinstance(e, RequestsHTTPError):
+                status_code = getattr(e.response, "status_code", None)
+                if status_code and 400 <= status_code < 500 and status_code != 429:
+                    is_retryable = False
+
+            if is_retryable:
                 last_exception = e
                 if on_error:
                     on_error(e)

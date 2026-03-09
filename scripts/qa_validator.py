@@ -130,8 +130,9 @@ def extract_page_text(blocks: list, notion=None) -> str:
                 client = notion or get_notion_client()
                 children = client.blocks.children.list(block_id=block["id"])
                 texts.append(extract_page_text(children.get("results", []), notion=client))
-            except Exception:
-                pass
+            except Exception as e:
+                block_id = block.get("id", "unknown")
+                logger.warning(f"Failed to fetch children of block {block_id}: {e}")
 
     return "\n".join(texts)
 

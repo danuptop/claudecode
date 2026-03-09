@@ -41,7 +41,6 @@ Deployment:
 """
 
 import logging
-import os
 import re
 from datetime import datetime, timezone
 from typing import Optional
@@ -217,7 +216,16 @@ def slugs_likely_match(slug_a: str, slug_b: str) -> bool:
 
 
 def generate_report_key(company: str, amount: int) -> str:
-    """Generate a v3 REPORT KEY for a fundraising intel page."""
+    """Generate a v3 REPORT KEY for a fundraising intel page.
+
+    Raises ValueError if amount is 0 or negative, since $0 keys immediately
+    fail QA validation and break dedup matching.
+    """
+    if amount <= 0:
+        raise ValueError(
+            f"Cannot generate REPORT KEY with amount={amount} for '{company}'. "
+            "A $0 amount means the source wasn't parsed correctly — fix upstream."
+        )
     return f"fundraising-intel:v3:{normalize_company_slug(company)}:{amount}"
 
 
@@ -388,7 +396,6 @@ def build_page_properties(
     Returns a dict suitable for notion.pages.create(properties=...).
     """
     now = datetime.now(timezone.utc)
-    date_str = now.strftime("%b %d, %Y").upper().replace(" 0", " ")
     amount_str = _format_amount(round_amount)
     title = f"{company} — {amount_str} {round_type} | FUNDING INTEL | {now.strftime('%b').upper()} {now.strftime('%d').lstrip('0')}, {now.year}"
 

@@ -33,6 +33,7 @@ import logging
 import os
 import re
 import sys
+import time
 from typing import Optional
 
 logger = logging.getLogger("content_sanitizer")
@@ -45,6 +46,12 @@ logger = logging.getLogger("content_sanitizer")
 try:
     from qa_validator import ERROR_PATTERNS, ERROR_RE
 except ImportError:
+    # Standalone fallback — keep in sync with qa_validator.ERROR_PATTERNS.
+    # Expected count: 10 patterns. If qa_validator adds patterns and this
+    # fallback is used, the count mismatch will be caught at import time
+    # once the import succeeds again.
+    _FALLBACK_ERROR_PATTERN_COUNT = 10  # bump when adding patterns
+
     ERROR_PATTERNS = [
         r"HTTPSConnectionPool\(",
         r"Max retries exceeded",
@@ -57,48 +64,60 @@ except ImportError:
         r"TimeoutError",
         r"Search error: HTTPSConnectionPool",
     ]
+    assert len(ERROR_PATTERNS) == _FALLBACK_ERROR_PATTERN_COUNT, (
+        f"ERROR_PATTERNS fallback has {len(ERROR_PATTERNS)} entries, "
+        f"expected {_FALLBACK_ERROR_PATTERN_COUNT}. Sync with qa_validator.py."
+    )
     ERROR_RE = re.compile("|".join(ERROR_PATTERNS), re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # Error patterns to strip from content
 # ---------------------------------------------------------------------------
 
-# Patterns that match entire lines/blocks to remove
+# Patterns that match entire lines to remove.
+# IMPORTANT: These use re.MULTILINE (^ and $ match line boundaries) but NOT
+# re.DOTALL, so .* stays within single lines and won't eat adjacent content.
 LINE_REMOVAL_PATTERNS = [
     # DuckDuckGo connection errors embedded as hiring signals
-    r".*Search error: HTTPSConnectionPool\(host='html\.duckduckgo\.com'.*",
+    r"^.*Search error: HTTPSConnectionPool\(host='html\.duckduckgo\.com'.*$",
     # Grok API timeout errors in competitor benchmarks
-    r".*\[Grok error: HTTPSConnectionPool\(host='api\.x\.ai'.*?\].*",
+    r"^.*\[Grok error: HTTPSConnectionPool\(host='api\.x\.ai'.*?\].*$",
     # Generic Python connection errors
-    r".*HTTPSConnectionPool\(host=.*?Max retries exceeded.*",
-    r".*requests\.exceptions\.\w+Error.*",
-    r".*ConnectionError\(MaxRetryError.*",
-    # Raw tracebacks
-    r"Traceback \(most recent call last\):.*?(?=\n\S|\Z)",
+    r"^.*HTTPSConnectionPool\(host=.*?Max retries exceeded.*$",
+    r"^.*requests\.exceptions\.\w+Error.*$",
+    r"^.*ConnectionError\(MaxRetryError.*$",
 ]
+
+# Traceback pattern — separate because it DOES need to span multiple lines.
+# Matches from "Traceback" through all indented continuation lines and the
+# final exception line (e.g., "ValueError: ...").
+_TRACEBACK_RE = re.compile(
+    r"Traceback \(most recent call last\):\n(?:[ \t]+.*\n)*\w[\w.]*(?:Error|Exception).*",
+    re.MULTILINE,
+)
 
 # Patterns for inline replacement (replace match with fallback text)
 INLINE_REPLACEMENTS = [
     # mcp_unavailable entries in warm intro map
     (
-        r"- Status: mcp_unavailable\n- Notes: Icebreaker MCP URL not configured.*",
+        r"- Status: mcp_unavailable\n- Notes: Icebreaker MCP URL not configured[^\n]*",
         "- Status: Pending — Icebreaker integration not yet configured.",
     ),
     # Truncated Grok responses
     (
-        r"\[Grok error:.*?\]",
+        r"\[Grok error:[^\]]*\]",
         "[Analysis unavailable — API timeout. Manual review recommended.]",
     ),
     # DuckDuckGo errors appearing as signal text
     (
-        r"Search error: HTTPSConnectionPool.*?(?=\n|\Z)",
+        r"Search error: HTTPSConnectionPool[^\n]*",
         "[Search unavailable — service timeout.]",
     ),
 ]
 
-# Compiled patterns
-_line_removal_re = [re.compile(p, re.DOTALL | re.MULTILINE) for p in LINE_REMOVAL_PATTERNS]
-_inline_replacements = [(re.compile(p, re.DOTALL), r) for p, r in INLINE_REPLACEMENTS]
+# Compiled patterns — use MULTILINE only (NOT DOTALL) so .* stays per-line
+_line_removal_re = [re.compile(p, re.MULTILINE) for p in LINE_REMOVAL_PATTERNS]
+_inline_replacements = [(re.compile(p), r) for p, r in INLINE_REPLACEMENTS]
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +209,10 @@ def sanitize_text(text: str) -> str:
     Returns:
         Cleaned text with errors replaced by clean fallbacks.
     """
-    # Apply line removals
+    # Remove full tracebacks first (multi-line pattern)
+    text = _TRACEBACK_RE.sub("", text)
+
+    # Apply single-line removals
     for pattern in _line_removal_re:
         text = pattern.sub("", text)
 
@@ -426,6 +448,7 @@ def clean_page(page_id: str, dry_run: bool = False):
             try:
                 notion.blocks.delete(block_id=block["id"])
                 removed_count += 1
+                time.sleep(0.4)  # rate limit: ~3 req/s
             except Exception as e:
                 logger.warning(f"  Could not delete block {block['id']}: {e}")
         elif cleaned != original:
@@ -442,6 +465,7 @@ def clean_page(page_id: str, dry_run: bool = False):
                     },
                 )
                 cleaned_count += 1
+                time.sleep(0.4)  # rate limit: ~3 req/s
             except Exception as e:
                 logger.warning(f"  Could not update block {block['id']}: {e}")
 
