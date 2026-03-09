@@ -55,10 +55,12 @@ These changes were made directly to Notion pages. They are complete. Do not repe
 |---|------|-------|-----------------|
 | 0 | **PAUSE PIPELINE** | Tony | `crontab -e` — comment out all `founder-intel-pipeline`, `funding-intel-brief`, `outreach-pipeline-trigger` cron entries. This prevents new buggy runs between cleanup and patch deployment. |
 | 1 | Back up scripts | Tony | See STEP 0 below |
-| 2 | Transfer new modules | Local | `scp scripts/{qa_validator,content_sanitizer,resilient_api,canonical_template}.py tony:/home/ubuntu/clawd/scripts/` |
+| 2 | Transfer new modules | Local | `scp scripts/{qa_validator,content_sanitizer,resilient_api,canonical_template,unified_pipeline,enrichment_backfill,event_queue,amount_parser,page_registry,source_dedup_cache,pipeline_lock,qa_dashboard,notion_client_wrapper}.py tony:/home/ubuntu/clawd/scripts/` |
+| 2b | Transfer support files | Local | `scp scripts/company_aliases.json tony:/home/ubuntu/clawd/scripts/` |
 | 3 | Apply patches to 3 scripts | Tony | See SCRIPT 1/2/3 sections below |
-| 4 | Syntax validation | Tony | `python3 -c 'import ast; ast.parse(open("script.py").read())'` for each |
-| 5 | Dry-run test | Tony | `python3 scripts/funding-intel-brief.py --dry-run --company "CROSSOVER MARKETS"` |
+| 4 | Syntax validation | Tony | `for f in /home/ubuntu/clawd/scripts/*.py; do python3 -c "import ast; ast.parse(open('$f').read())" && echo "OK: $f" || echo "FAIL: $f"; done` |
+| 5 | Dry-run test (legacy) | Tony | `python3 scripts/funding-intel-brief.py --dry-run --company "CROSSOVER MARKETS"` |
+| 5b | Dry-run test (unified) | Tony | `python3 scripts/unified_pipeline.py --company "CROSSOVER MARKETS" --amount 31000000 --round-type SEED --dry-run` |
 | 6 | **RESUME PIPELINE** | Tony | `crontab -e` — uncomment the cron entries from step 0 |
 | 7 | Commit & sync | Tony | `git add ... && git commit ...` then run `up top sync` |
 

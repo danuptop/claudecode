@@ -8,15 +8,15 @@
 
 ## EXECUTIVE SUMMARY
 
-The system is in good shape. Of 15 findings flagged by automated analysis, 5 were false positives after manual verification. The remaining 10 are categorized below: 4 were fixed inline during this audit, 6 are acknowledged risks or future improvements.
+The system is in good shape. Of 17 findings flagged by automated analysis, 5 were false positives after manual verification. The remaining 12 are categorized below: 6 were fixed inline during this audit (including a critical deployment gap), 6 are acknowledged risks or future improvements.
 
 | Severity | Found | Fixed | Acknowledged |
 |----------|-------|-------|-------------|
-| CRITICAL | 0     | 0     | 0           |
+| CRITICAL | 1     | 1     | 0           |
 | HIGH     | 2     | 2     | 0           |
-| MEDIUM   | 4     | 2     | 2           |
+| MEDIUM   | 5     | 3     | 2           |
 | LOW      | 4     | 0     | 4           |
-| **Total** | **10** | **4** | **6**      |
+| **Total** | **12** | **6** | **6**      |
 
 ---
 
@@ -95,6 +95,20 @@ Added 3 tests: known alias, unknown fallback, case insensitivity. **(Resolved du
 ### FA-10: `resilient_api.py:245` — No Grok response format validation — MEDIUM
 
 `call_grok()` assumes `data["choices"][0]["message"]["content"]` structure in the response. A malformed or changed API response would raise `KeyError` instead of returning a meaningful fallback. Should wrap in try/except with fallback.
+
+---
+
+## DOCUMENTATION FINDINGS (Fixed in this audit)
+
+### FA-11: Deployment SCP command missing 9 modules — CRITICAL → FIXED
+
+`CODEX-DEPLOYMENT-PROMPT.md:58` — The SCP transfer command only listed 4 modules (`qa_validator`, `content_sanitizer`, `resilient_api`, `canonical_template`). The 9 new improvement modules (`unified_pipeline`, `enrichment_backfill`, `event_queue`, `amount_parser`, `page_registry`, `source_dedup_cache`, `pipeline_lock`, `qa_dashboard`, `notion_client_wrapper`) and `company_aliases.json` were missing. Deploying without them would cause `ImportError` on first run of `unified_pipeline.py`.
+
+**Fix**: Updated SCP command to include all 13 modules + aliases JSON. Added step 2b for support files. Added step 5b for unified pipeline dry-run validation.
+
+### FA-12: .gitignore incomplete — MEDIUM → FIXED
+
+Only excluded `__pycache__/`, `*.pyc`, `.pytest_cache/`. Added: `*.bak`, `.env`, `*.db`, `*.log`, `/data/`, `/queues/`, `venv/`.
 
 ---
 
