@@ -8,22 +8,32 @@ for page structure.
 
 Usage:
     from canonical_template import (
-        create_canonical_page,
-        TEMPLATE_SECTIONS,
+        build_canonical_blocks,
+        build_page_properties,
         validate_page_structure,
+        TEMPLATE_SECTIONS,
     )
 
-    # Create a new canonical page with the standard template
-    page_id = create_canonical_page(
+    # Build blocks and properties for a new canonical page
+    blocks = build_canonical_blocks(
         company="CROSSOVER MARKETS",
         round_amount=31000000,
         round_type="SERIES B",
         investors=["a16z", "Coinbase Ventures"],
         sources=[{"url": "https://...", "title": "Bloomberg"}],
     )
+    props = build_page_properties(
+        company="CROSSOVER MARKETS",
+        round_amount=31000000,
+        round_type="SERIES B",
+        run_id="run-2026-03-09-001",
+    )
+    page = notion.pages.create(
+        parent={"database_id": DB_ID}, properties=props, children=blocks,
+    )
 
-    # Validate that an existing page follows the template
-    issues = validate_page_structure(page_id)
+    # Validate that page content follows the template
+    issues = validate_page_structure(page_content_text)
 
 Deployment:
     Place at: /home/ubuntu/clawd/scripts/canonical_template.py
@@ -134,8 +144,6 @@ COMPANY_ALIASES: dict[str, str] = {
     "izumi-fi": "izumi",
     # Crema Finance
     "crema-finance": "crema",
-    # Sats Terminal
-    "sats-terminal": "sats-terminal",
 }
 
 
@@ -260,9 +268,13 @@ def amounts_match(a: int, b: int, tolerance: float = 0.05) -> bool:
     Check if two amounts match within a tolerance (default ±5%).
 
     Handles the BLUPRYNT case where $4.2M vs $4.25M are the same deal.
+
+    Two $0 amounts are treated as NON-matching because $0 means the amount
+    couldn't be parsed — they could be completely different deals.
     """
     if a == 0 or b == 0:
-        return a == b
+        # $0 = unparsed amount — never match (even to another $0)
+        return False
     return abs(a - b) / max(a, b) <= tolerance
 
 
@@ -380,16 +392,19 @@ def build_page_properties(
     amount_str = _format_amount(round_amount)
     title = f"{company} — {amount_str} {round_type} | FUNDING INTEL | {now.strftime('%b').upper()} {now.strftime('%d').lstrip('0')}, {now.year}"
 
+    now_iso = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
     props = {
         "ENTRY": {"title": [{"text": {"content": title}}]},
         "TYPE": {"select": {"name": "FUNDRAISING INTEL"}},
-        "SOURCE SKILL": {"rich_text": [{"text": {"content": "funding-intel-brief"}}]},
+        "SOURCE SKILL": {"select": {"name": "funding-intel-brief"}},
         "REPORT KEY": {"rich_text": [{"text": {"content": generate_report_key(company, round_amount)}}]},
         "RUN ID": {"rich_text": [{"text": {"content": run_id}}]},
         "QA STATUS": {"select": {"name": "PASS"}},
         "QA ISSUES": {"rich_text": [{"text": {"content": ""}}]},
         "COMPANY": {"rich_text": [{"text": {"content": company}}]},
         "ROUND AMOUNT": {"number": round_amount},
+        "DATE": {"date": {"start": now_iso}},
     }
 
     if poc_user_ids:
@@ -445,14 +460,22 @@ def validate_page_structure(page_content: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def _format_amount(amount: int) -> str:
-    """Format an integer amount as a display string."""
+    """Format an integer amount as a display string.
+
+    Preserves up to 3 significant digits to avoid precision loss
+    (e.g., $4.25M stays $4.25M, not $4.2M).
+    """
     if amount >= 1_000_000_000:
-        return f"${amount / 1_000_000_000:.1f}B"
+        val = amount / 1_000_000_000
+        # Strip trailing zeros but keep meaningful decimals
+        formatted = f"{val:.2f}".rstrip("0").rstrip(".")
+        return f"${formatted}B"
     elif amount >= 1_000_000:
         val = amount / 1_000_000
         if val == int(val):
             return f"${int(val)}M"
-        return f"${val:.1f}M"
+        formatted = f"{val:.2f}".rstrip("0").rstrip(".")
+        return f"${formatted}M"
     elif amount >= 1_000:
         return f"${amount / 1_000:.0f}K"
     elif amount > 0:

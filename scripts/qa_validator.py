@@ -27,6 +27,7 @@ import logging
 import os
 import re
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -95,6 +96,9 @@ def get_notion_client():
 def extract_page_text(blocks: list, notion=None) -> str:
     """Recursively extract all text from Notion blocks.
 
+    Emits markdown-style heading prefixes (##, ###) so that downstream
+    functions like ``_extract_section`` can locate sections by heading.
+
     Args:
         blocks: List of Notion block objects.
         notion: Optional Notion client instance (avoids re-creating per recursion).
@@ -106,8 +110,19 @@ def extract_page_text(blocks: list, notion=None) -> str:
 
         # Extract rich_text from any block type
         rich_texts = type_data.get("rich_text", [])
-        for rt in rich_texts:
-            texts.append(rt.get("plain_text", ""))
+        plain = "".join(rt.get("plain_text", "") for rt in rich_texts)
+
+        # Emit markdown heading prefixes so _extract_section can match
+        if block_type == "heading_1":
+            texts.append(f"# {plain}")
+        elif block_type == "heading_2":
+            texts.append(f"## {plain}")
+        elif block_type == "heading_3":
+            texts.append(f"### {plain}")
+        elif block_type in ("bulleted_list_item", "numbered_list_item"):
+            texts.append(f"- {plain}")
+        elif plain:
+            texts.append(plain)
 
         # Recurse into children
         if block.get("has_children"):
@@ -211,9 +226,9 @@ def validate_page(
     if not run_id:
         result.warn("Empty RUN ID — cannot trace to specific pipeline run.")
 
-    # ---- Check 7: COMPANY field must be populated ----
+    # ---- Check 7: COMPANY field must be populated (FUNDRAISING INTEL only) ----
     company = _get_text_prop(page_props, "COMPANY")
-    if not company:
+    if page_type == "FUNDRAISING INTEL" and not company:
         result.fail("Empty COMPANY field — entity tracking broken.")
 
     # ---- Check 8: $0 amount detection (F-11) ----
@@ -385,7 +400,9 @@ def _get_text_prop(props: dict, name: str) -> str:
 
 def _extract_section(content: str, heading: str) -> Optional[str]:
     """Extract text under a heading until the next heading."""
-    pattern = rf"(?:^|\n)#+\s*.*{re.escape(heading)}.*\n(.*?)(?=\n#+\s|\Z)"
+    # Use [^\n]* instead of .* for the heading line to prevent DOTALL from
+    # matching across lines (which would skip to the last \n in the string).
+    pattern = rf"(?:^|\n)#+\s*[^\n]*{re.escape(heading)}[^\n]*\n(.*?)(?=\n#+\s|\Z)"
     match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
     return match.group(1).strip() if match else None
 
@@ -394,9 +411,9 @@ def _extract_section(content: str, heading: str) -> Optional[str]:
 # Main: update Notion page QA STATUS based on validation
 # ---------------------------------------------------------------------------
 
-def validate_and_update(page_id: str, dry_run: bool = False) -> QAResult:
+def validate_and_update(page_id: str, dry_run: bool = False, notion=None) -> QAResult:
     """Validate a page and update its QA STATUS in Notion."""
-    notion = get_notion_client()
+    notion = notion or get_notion_client()
 
     # Fetch page properties
     page = notion.pages.retrieve(page_id=page_id)
@@ -454,28 +471,39 @@ def validate_recent(hours: int = 24, dry_run: bool = False):
     notion = get_notion_client()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-    # Query pages edited after cutoff
+    # Query pages edited after cutoff, handling pagination
     # DATE is a date property, so use "date" filter key (not "created_time")
-    results = notion.databases.query(
-        database_id=REPORT_BASE_DB,
-        filter={
-            "property": "DATE",
-            "date": {"after": cutoff.isoformat()},
-        },
-        sorts=[{"property": "DATE", "direction": "descending"}],
-    )
+    pages = []
+    cursor = None
+    while True:
+        kwargs = {
+            "database_id": REPORT_BASE_DB,
+            "filter": {
+                "property": "DATE",
+                "date": {"after": cutoff.isoformat()},
+            },
+            "sorts": [{"property": "DATE", "direction": "descending"}],
+        }
+        if cursor:
+            kwargs["start_cursor"] = cursor
+        results = notion.databases.query(**kwargs)
+        pages.extend(results.get("results", []))
+        if not results.get("has_more"):
+            break
+        cursor = results.get("next_cursor")
 
-    pages = results.get("results", [])
     logger.info(f"Found {len(pages)} pages created in last {hours}h")
 
     stats = {"PASS": 0, "WARN": 0, "FAIL": 0, "SKIP": 0}
     for page in pages:
         page_id = page["id"]
         try:
-            qa = validate_and_update(page_id, dry_run=dry_run)
+            qa = validate_and_update(page_id, dry_run=dry_run, notion=notion)
             stats[qa.status] = stats.get(qa.status, 0) + 1
         except Exception as e:
             logger.error(f"Error validating {page_id}: {e}")
+        # Throttle to stay within Notion's rate limit (~3 req/s)
+        time.sleep(0.4)
 
     logger.info(f"\nValidation summary: {json.dumps(stats, indent=2)}")
     return stats
@@ -485,7 +513,7 @@ def validate_recent(hours: int = 24, dry_run: bool = False):
 # Integration hook — call from other pipeline scripts
 # ---------------------------------------------------------------------------
 
-def post_write_hook(page_id: str, dry_run: bool = False) -> str:
+def post_write_hook(page_id: str, dry_run: bool = False, notion=None) -> str:
     """
     Call this after writing/updating a Notion page.
 
@@ -497,7 +525,7 @@ def post_write_hook(page_id: str, dry_run: bool = False) -> str:
         if status == "FAIL":
             logger.error(f"Page {page_id} failed QA validation")
     """
-    qa = validate_and_update(page_id, dry_run=dry_run)
+    qa = validate_and_update(page_id, dry_run=dry_run, notion=notion)
     return qa.status
 
 

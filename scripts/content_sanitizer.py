@@ -38,23 +38,26 @@ from typing import Optional
 logger = logging.getLogger("content_sanitizer")
 
 # ---------------------------------------------------------------------------
-# Error patterns to detect (shared with qa_validator for consistency)
+# Error patterns to detect — import from qa_validator as single source of truth.
+# Fallback to local definition if qa_validator is not available (standalone use).
 # ---------------------------------------------------------------------------
 
-ERROR_PATTERNS = [
-    r"HTTPSConnectionPool\(",
-    r"Max retries exceeded",
-    r"Read timed out",
-    r"\[Grok error:",
-    r"mcp_unavailable",
-    r"ConnectionError\(",
-    r"Traceback \(most recent call last\)",
-    r"requests\.exceptions\.",
-    r"TimeoutError",
-    r"Search error: HTTPSConnectionPool",
-]
-
-ERROR_RE = re.compile("|".join(ERROR_PATTERNS), re.IGNORECASE)
+try:
+    from qa_validator import ERROR_PATTERNS, ERROR_RE
+except ImportError:
+    ERROR_PATTERNS = [
+        r"HTTPSConnectionPool\(",
+        r"Max retries exceeded",
+        r"Read timed out",
+        r"\[Grok error:",
+        r"mcp_unavailable",
+        r"ConnectionError\(",
+        r"Traceback \(most recent call last\)",
+        r"requests\.exceptions\.",
+        r"TimeoutError",
+        r"Search error: HTTPSConnectionPool",
+    ]
+    ERROR_RE = re.compile("|".join(ERROR_PATTERNS), re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 # Error patterns to strip from content
@@ -105,8 +108,12 @@ _inline_replacements = [(re.compile(p, re.DOTALL), r) for p, r in INLINE_REPLACE
 ROLE_INDICATORS = [
     "co-founder", "cofounder", "ceo", "cto", "cfo", "coo",
     "founder", "partner", "managing director", "president",
-    "vp ", "vice president", "head of", "director of",
+    "vice president", "head of", "director of",
 ]
+
+# Patterns that indicate a role when used as the full entry (not a prefix
+# of a fund name like "VP Ventures")
+_ROLE_ONLY_PREFIXES = ["vp of ", "vp, ", "vp -"]
 
 
 def sanitize_investor_list(investors: list[str]) -> list[str]:
@@ -148,6 +155,11 @@ def sanitize_investor_list(investors: list[str]) -> list[str]:
 
         # Skip entries that are JUST a role indicator
         if any(inv_lower == role or inv_lower.startswith(role + " ") for role in ROLE_INDICATORS):
+            continue
+
+        # Skip entries that start with VP-as-role patterns (but not fund names
+        # like "VP Ventures", "VP Capital")
+        if any(inv_lower.startswith(p) for p in _ROLE_ONLY_PREFIXES):
             continue
 
         cleaned.append(inv)
@@ -352,6 +364,9 @@ def clean_page(page_id: str, dry_run: bool = False):
         sys.exit(1)
 
     token = os.getenv("NOTION_TOKEN") or os.getenv("NOTION_API_KEY")
+    if not token:
+        logger.error("NOTION_TOKEN or NOTION_API_KEY environment variable required")
+        sys.exit(1)
     notion = Client(auth=token)
 
     page = notion.pages.retrieve(page_id=page_id)

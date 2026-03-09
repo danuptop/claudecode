@@ -125,7 +125,6 @@ def resilient_call(
     fn: Callable[[], Any],
     retries: int = 2,
     base_delay: float = 2.0,
-    timeout: Optional[float] = None,
     fallback: Any = None,
     circuit_breaker: Optional[CircuitBreaker] = None,
     on_error: Optional[Callable[[Exception], None]] = None,
@@ -135,10 +134,9 @@ def resilient_call(
 
     Args:
         fn: The callable to execute. Should be a lambda or closure.
+            Pass timeout directly in the underlying requests call inside fn.
         retries: Number of retry attempts after the initial call.
         base_delay: Base delay in seconds for exponential backoff.
-        timeout: Not enforced here — pass timeout to the underlying
-                 requests call inside fn.
         fallback: Value to return if all retries fail.
         circuit_breaker: Optional CircuitBreaker instance.
         on_error: Optional callback for each error (for logging/metrics).
@@ -273,7 +271,16 @@ def call_grok(prompt: str, timeout: int = 30, api_key: Optional[str] = None) -> 
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        choices = data.get("choices")
+        if not choices or not isinstance(choices, list):
+            logger.warning(f"Grok API returned unexpected response: no 'choices' in {list(data.keys())}")
+            return None
+        message = choices[0].get("message", {})
+        content = message.get("content")
+        if content is None:
+            logger.warning("Grok API returned empty message content")
+            return None
+        return content
 
     return resilient_call(
         _call,
